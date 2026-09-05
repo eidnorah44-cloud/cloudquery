@@ -32,12 +32,28 @@ func (s *SecretAwareRedactor) RedactStr(msg string) string {
 }
 
 func (s *SecretAwareRedactor) RedactBytes(msg []byte) []byte {
-	for v, k := range s.secrets {
-		msg = bytes.ReplaceAll(msg, []byte(v), []byte(k))
+	keys := make([]string, 0, len(s.secrets))
+	for v := range s.secrets {
+		keys = append(keys, v)
+	}
+	// Sort keys by length in descending order to handle longer overlapping secrets first
+	// (e.g. full assignment "KEY=VALUE" before standalone "VALUE"), with tie-breaking for determinism.
+	slices.SortFunc(keys, func(a, b string) int {
+		if len(a) != len(b) {
+			return len(b) - len(a) // descending length
+		}
+		return strings.Compare(a, b)
+	})
+
+	for _, v := range keys {
+		msg = bytes.ReplaceAll(msg, []byte(v), []byte(s.secrets[v]))
 	}
 	return msg
 }
 
+// AddSecretEnv registers environment variables for secret redaction.
+// Security concern: prevents sensitive credentials, tokens, and raw environment key=value
+// assignments from leaking in CLI output, error messages, or logs.
 func (s *SecretAwareRedactor) AddSecretEnv(envs []string) {
 	for _, v := range envs {
 		if slices.ContainsFunc(allowedEnvPrefixes, func(prefix string) bool { return strings.HasPrefix(v, prefix) }) {
@@ -45,11 +61,19 @@ func (s *SecretAwareRedactor) AddSecretEnv(envs []string) {
 		}
 
 		parts := strings.SplitN(v, "=", 2)
-		if len(parts) != 2 || len(parts[1]) < minRedactingLength {
+		if len(parts) != 2 {
 			continue
 		}
 
-		s.secrets[parts[1]] = parts[0]
+		// Redact raw KEY=VALUE assignment strings if logged in full
+		if len(v) >= minRedactingLength {
+			s.secrets[v] = parts[0]
+		}
+
+		// Redact the secret value itself if it meets the minimum redacting length
+		if len(parts[1]) >= minRedactingLength {
+			s.secrets[parts[1]] = parts[0]
+		}
 	}
 }
 
