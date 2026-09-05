@@ -69,6 +69,18 @@ func TestRedaction(t *testing.T) {
 			msg:  "wrong api key cqtk_test",
 			want: "wrong api key CLOUDQUERY_API_KEY",
 		},
+		{
+			name: "does redact full KEY=VALUE pair when logged as assignment",
+			env:  []string{"CLOUDQUERY_API_KEY=cqtk_test"},
+			msg:  "env setting CLOUDQUERY_API_KEY=cqtk_test failed",
+			want: "env setting CLOUDQUERY_API_KEY failed",
+		},
+		{
+			name: "handles values with equal signs in both secret value and full string",
+			env:  []string{"DB_CONN=user=admin;pass=secret123"},
+			msg:  "connection error DB_CONN=user=admin;pass=secret123 with user=admin;pass=secret123",
+			want: "connection error DB_CONN with DB_CONN",
+		},
 	}
 	for _, tt := range tests {
 		redactor := NewSecretAwareRedactor()
