@@ -164,9 +164,14 @@ func normalize(t string) string {
 
 func parseTimestamp(t string) (arrow.DataType, bool) {
 	timestamptzPrefix := "timestamptz using"
-	t = strings.TrimPrefix(t, timestamptzPrefix)
+	t = strings.TrimSpace(strings.TrimPrefix(t, timestamptzPrefix))
 	if t == "timestamptz" {
 		return arrow.FixedWidthTypes.Timestamp_us, true
+	}
+
+	// Fast path: avoid expensive regex evaluation if string does not start with "timestamp"
+	if !strings.HasPrefix(t, "timestamp") {
+		return nil, false
 	}
 
 	matches := reTimestamp.FindAllStringSubmatch(t, -1)
@@ -184,6 +189,11 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 }
 
 func parseTime(t string) (arrow.DataType, bool) {
+	// Fast path: avoid expensive regex evaluation if string does not start with "time"
+	if !strings.HasPrefix(t, "time") {
+		return nil, false
+	}
+
 	matches := reTime.FindAllStringSubmatch(t, -1)
 	if len(matches) == 0 {
 		return nil, false
@@ -199,6 +209,11 @@ func parseTime(t string) (arrow.DataType, bool) {
 }
 
 func parseNumeric(t string) (arrow.DataType, bool) {
+	// Fast path: avoid expensive regex evaluation if string does not start with "numeric"
+	if !strings.HasPrefix(t, "numeric") {
+		return nil, false
+	}
+
 	matches := reNumeric.FindAllStringSubmatch(t, -1)
 	if len(matches) == 0 {
 		return nil, false
