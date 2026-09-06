@@ -1,0 +1,4 @@
+## 2025-02-17 - Cross-Platform Path Separator Sanitization in CLI Commands
+**Vulnerability:** In `plugin docs download`, remote doc item names were sanitized using `strings.ReplaceAll(item.Name, string(filepath.Separator), "_")`. On Windows, `filepath.Separator` is `\`, so Unix path separators `/` (such as `../../etc/passwd`) were ignored, leading to Path Traversal vulnerabilities when saving files locally.
+**Learning:** Remote or API inputs are platform-agnostic and may contain Unix `/` or Windows `\` path separators regardless of the host OS on which the CLI is running. Using OS-dependent `filepath.Separator` for input sanitization creates platform-specific security gaps.
+**Prevention:** Always explicitly sanitize both `/` and `\` path separators when handling untrusted or remote file path inputs.
