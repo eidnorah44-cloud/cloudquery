@@ -165,3 +165,60 @@ func TestRecord(t *testing.T) {
 		})
 	}
 }
+
+func TestTransformSchemaCaching(t *testing.T) {
+	tr := NewRecordTransformer(
+		WithSourceNameColumn("test"),
+		WithRemovePKs(),
+	)
+	sc := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64, Metadata: arrow.MetadataFrom(map[string]string{schema.MetadataPrimaryKey: "true"})},
+	}, nil)
+
+	s1 := tr.TransformSchema(sc)
+	s2 := tr.TransformSchema(sc)
+
+	if s1 != s2 {
+		t.Fatalf("expected identical pointer for cached schema transformation, got %p vs %p", s1, s2)
+	}
+}
+
+func BenchmarkTransform(b *testing.B) {
+	tTime, _ := time.Parse(time.RFC3339, "2023-06-21T17:54:44.488177Z")
+	tr := NewRecordTransformer(
+		WithSyncTimeColumn(tTime),
+		WithSourceNameColumn("test_source"),
+		WithRemovePKs(),
+		WithRemoveUniqueConstraints(),
+		WithCQIDPrimaryKey(),
+	)
+
+	fields := make([]arrow.Field, 20)
+	for i := 0; i < 19; i++ {
+		fields[i] = arrow.Field{
+			Name:     "col_" + string(rune('a'+i)),
+			Type:     arrow.PrimitiveTypes.Int64,
+			Metadata: arrow.MetadataFrom(map[string]string{"comment": "test"}),
+		}
+	}
+	fields[0].Metadata = arrow.MetadataFrom(map[string]string{schema.MetadataPrimaryKey: "true"})
+	fields[19] = arrow.Field{Name: "_cq_id", Type: arrow.BinaryTypes.String}
+
+	sc := arrow.NewSchema(fields, nil)
+	bldr := array.NewRecordBuilder(memory.DefaultAllocator, sc)
+	for i := 0; i < 20; i++ {
+		if i == 19 {
+			bldr.Field(i).(*array.StringBuilder).Append("cq_id_val")
+		} else {
+			bldr.Field(i).(*array.Int64Builder).Append(int64(i))
+		}
+	}
+	rec := bldr.NewRecordBatch()
+	defer rec.Release()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = tr.Transform(rec)
+	}
+}
