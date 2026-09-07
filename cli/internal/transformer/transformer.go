@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"sync"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -28,6 +29,10 @@ type RecordTransformer struct {
 	withSyncGroupID         bool
 	syncGroupId             string
 	cqColumnsNotNull        bool
+
+	// schemaCache caches transformed schemas by input *arrow.Schema pointer to avoid
+	// redundant schema reconstruction and metadata allocations across record batches during sync.
+	schemaCache sync.Map
 }
 
 type RecordTransformerOption func(*RecordTransformer)
@@ -89,6 +94,11 @@ func NewRecordTransformer(opts ...RecordTransformerOption) *RecordTransformer {
 }
 
 func (t *RecordTransformer) TransformSchema(sc *arrow.Schema) *arrow.Schema {
+	// Performance optimization: return cached transformed schema if input schema instance has already been processed.
+	if cached, ok := t.schemaCache.Load(sc); ok {
+		return cached.(*arrow.Schema)
+	}
+
 	fields := make([]arrow.Field, 0, len(sc.Fields())+t.internalColumns)
 	if t.withSyncTime && !sc.HasField(cqSyncTime) {
 		fields = append(fields, arrow.Field{Name: cqSyncTime, Type: arrow.FixedWidthTypes.Timestamp_us, Nullable: !t.cqColumnsNotNull})
@@ -109,15 +119,26 @@ func (t *RecordTransformer) TransformSchema(sc *arrow.Schema) *arrow.Schema {
 
 	transformedFields := make([]arrow.Field, len(fields))
 	for i, field := range fields {
+		hasUnique := t.removeUniqueConstraints && field.Metadata.FindKey(schema.MetadataUnique) >= 0
+		hasPK := t.removePks && field.Metadata.FindKey(schema.MetadataPrimaryKey) >= 0
+		needsCQIDPK := t.cqIDPrimaryKey && field.Name == cqIDColumnName
+
+		// Fast-path: if field metadata does not require modification, retain the original field directly
+		// to prevent converting Metadata to map[string]string and rebuilding arrow.Metadata.
+		if !hasUnique && !hasPK && !needsCQIDPK {
+			transformedFields[i] = field
+			continue
+		}
+
 		mdMap := field.Metadata.ToMap()
-		if _, ok := mdMap[schema.MetadataUnique]; ok && t.removeUniqueConstraints {
+		if hasUnique {
 			delete(mdMap, schema.MetadataUnique)
 		}
 
-		if _, ok := mdMap[schema.MetadataPrimaryKey]; ok && t.removePks {
+		if hasPK {
 			delete(mdMap, schema.MetadataPrimaryKey)
 		}
-		if field.Name == cqIDColumnName && t.cqIDPrimaryKey {
+		if needsCQIDPK {
 			mdMap[schema.MetadataPrimaryKey] = schema.MetadataTrue
 		}
 
@@ -129,7 +150,9 @@ func (t *RecordTransformer) TransformSchema(sc *arrow.Schema) *arrow.Schema {
 		}
 	}
 	scMd := sc.Metadata()
-	return arrow.NewSchema(transformedFields, &scMd)
+	transformed := arrow.NewSchema(transformedFields, &scMd)
+	t.schemaCache.Store(sc, transformed)
+	return transformed
 }
 
 func (t *RecordTransformer) replaceTimestampField(sc *arrow.Schema, record arrow.RecordBatch, nRows int) (arrow.RecordBatch, error) {
