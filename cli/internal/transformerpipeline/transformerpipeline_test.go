@@ -156,3 +156,32 @@ func (reverserTransformer) Trailer() metadata.MD         { return metadata.MD{} 
 func (reverserTransformer) Context() context.Context     { return nil }
 func (reverserTransformer) SendMsg(m any) error          { return nil }
 func (reverserTransformer) RecvMsg(m any) error          { return nil }
+
+func BenchmarkTransformerPipeline(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		transformers := []plugin.Plugin_TransformClient{newIdentityTransformer()}
+		pipeline, _, err := New(context.Background(), transformers)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := pipeline.OnOutput(func([]byte) error { return nil }); err != nil {
+			b.Fatal(err)
+		}
+
+		done := make(chan struct{})
+		go func() {
+			_ = pipeline.RunBlocking()
+			close(done)
+		}()
+
+		data := []byte("benchmark payload record data")
+		for j := 0; j < 100; j++ {
+			if err := pipeline.Send(data); err != nil {
+				b.Fatal(err)
+			}
+		}
+		pipeline.Close()
+		<-done
+	}
+}

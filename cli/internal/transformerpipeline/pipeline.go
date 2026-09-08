@@ -79,7 +79,8 @@ func (lp *TransformerPipeline) Send(data []byte) error {
 		return ErrPipelineClosed
 	}
 
-	sendCh := make(chan error)
+	// Buffer channel capacity 1 to prevent goroutine leak if Send returns early due to closed pipeline.
+	sendCh := make(chan error, 1)
 
 	// Send can block forever (e.g. if grpc buffer is full), so we run it asynchronously
 	// and check if pipeline is closed every second.
@@ -88,11 +89,16 @@ func (lp *TransformerPipeline) Send(data []byte) error {
 		sendCh <- err
 	}()
 
+	// Performance optimization: reuse a single ticker instead of creating a new time.After timer on each select loop iteration.
+	// time.After inside a loop allocates a runtime timer per iteration, causing memory allocations and timer heap churn during stream processing.
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case err := <-sendCh:
 			return err
-		case <-time.After(1 * time.Second): // Check if pipeline is closed every second
+		case <-ticker.C: // Check if pipeline is closed every second
 			if lp.clientWrappers[0].isClosed.Load() {
 				return ErrPipelineClosed
 			}
@@ -151,9 +157,14 @@ func (s *clientWrapper) startBlocking() error {
 		}
 	}()
 
+	// Performance optimization: reuse a single ticker instead of creating a new time.After timer on each record processed.
+	// Using time.After in the select loop allocates a new timer per received record, leading to high timer heap allocation and GC churn under load.
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-time.After(1 * time.Second): // Check if pipeline is closed every second
+		case <-ticker.C: // Check if pipeline is closed every second
 			if s.isClosed.Load() {
 				return s.nextClose()
 			}
