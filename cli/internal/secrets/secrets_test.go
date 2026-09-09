@@ -86,3 +86,68 @@ func TestRedaction(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkRedactStr_NoSecrets(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	msg := "this is a normal log message without any secrets"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactStr(msg)
+	}
+}
+
+func BenchmarkRedactStr_WithSecrets_NoMatch(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	redactor.AddSecretEnv([]string{
+		"DB_PASS=foobar123",
+		"API_KEY=secret_key_999",
+		"TOKEN=tok_1234567890",
+	})
+	msg := "this is a normal log message without any secrets in it"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactStr(msg)
+	}
+}
+
+func BenchmarkRedactBytes_NoSecrets(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	msg := []byte("this is a normal log message without any secrets in it")
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactBytes(msg)
+	}
+}
+
+func BenchmarkRedactBytes_WithSecrets_NoMatch(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	redactor.AddSecretEnv([]string{
+		"DB_PASS=foobar123",
+		"API_KEY=secret_key_999",
+		"TOKEN=tok_1234567890",
+	})
+	msg := []byte("this is a normal log message without any secrets in it")
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactBytes(msg)
+	}
+}
+
+func BenchmarkRedactBytes_WithSecrets_Match(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	redactor.AddSecretEnv([]string{
+		"DB_PASS=foobar123",
+		"API_KEY=secret_key_999",
+		"TOKEN=tok_1234567890",
+	})
+	msg := []byte("this is a log message containing foobar123 and tok_1234567890")
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactBytes(msg)
+	}
+}
