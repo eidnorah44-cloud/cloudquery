@@ -116,9 +116,11 @@ func runLogin(ctx context.Context, cmd *cobra.Command) (err error) {
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
+	// ReadHeaderTimeout is set to prevent Slowloris DoS attacks on the local callback server
 	server := http.Server{
-		Handler: mux,
-		Addr:    listener.Addr().String(),
+		Handler:           mux,
+		Addr:              listener.Addr().String(),
+		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	var serverErr error
