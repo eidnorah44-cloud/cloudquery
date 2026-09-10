@@ -45,18 +45,6 @@ func SnowflakeToSchemaType(t string) arrow.DataType {
 		return arrow.ListOf(SnowflakeToSchemaType(t[:len(t)-2]))
 	}
 
-	// Try specialized parsers first
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
-	}
-	for _, parser := range parsers {
-		if got, matched := parser(t); matched {
-			return got
-		}
-	}
-
 	switch t {
 	case "boolean":
 		return arrow.FixedWidthTypes.Boolean
@@ -75,25 +63,39 @@ func SnowflakeToSchemaType(t string) arrow.DataType {
 
 	case "variant", "object", "array":
 		return types.ExtensionTypes.JSON
-
-	// case "char", "character", "varchar", "string", "text", "geography", "geometry":
-	default:
-		return arrow.BinaryTypes.String
 	}
+
+	if strings.HasPrefix(t, "timestamp") {
+		if got, matched := parseTimestamp(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "time") {
+		if got, matched := parseTime(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "numeric") || strings.HasPrefix(t, "number") || strings.HasPrefix(t, "decimal") {
+		if got, matched := parseNumeric(t); matched {
+			return got
+		}
+	}
+
+	return arrow.BinaryTypes.String
 }
 
 func parseTimestamp(t string) (arrow.DataType, bool) {
 	// Handle Snowflake TIMESTAMP_* types with optional precision
-	if t == "timestamp_ltz" || t == "timestamp_tz" || t == "timestamp_ntz" {
+	if t == "timestamp_ltz" || t == "timestamp_tz" || t == "timestamp_ntz" || t == "timestamp" {
 		return arrow.FixedWidthTypes.Timestamp_ns, true
 	}
 
-	matches := reTimestamp.FindAllStringSubmatch(t, -1)
+	matches := reTimestamp.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
-	precisionStr := matches[0][1]
+	precisionStr := matches[1]
 	precision := 9 // default
 	if precisionStr != "" {
 		p, err := strconv.Atoi(precisionStr)
@@ -117,12 +119,16 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 }
 
 func parseTime(t string) (arrow.DataType, bool) {
-	matches := reTime.FindAllStringSubmatch(t, -1)
+	if t == "time" {
+		return arrow.FixedWidthTypes.Time64ns, true
+	}
+
+	matches := reTime.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
-	precisionStr := matches[0][1]
+	precisionStr := matches[1]
 	precision := 9 // default
 	if precisionStr != "" {
 		p, err := strconv.Atoi(precisionStr)
@@ -146,21 +152,25 @@ func parseTime(t string) (arrow.DataType, bool) {
 }
 
 func parseNumeric(t string) (arrow.DataType, bool) {
-	matches := reNumeric.FindAllStringSubmatch(t, -1)
+	if t == "numeric" || t == "number" || t == "decimal" {
+		return arrow.PrimitiveTypes.Int64, true
+	}
+
+	matches := reNumeric.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
 	// No precision/scale specified - default to Int64
-	if len(matches[0]) < 3 || matches[0][1] == "" {
+	if len(matches) < 3 || matches[1] == "" {
 		return arrow.PrimitiveTypes.Int64, true
 	}
 
-	precision, err := strconv.ParseInt(matches[0][1], 10, 32)
+	precision, err := strconv.ParseInt(matches[1], 10, 32)
 	if precision == 0 || err != nil {
 		panic("precision cannot be 0")
 	}
-	scale, err := strconv.ParseInt(matches[0][2], 10, 32)
+	scale, err := strconv.ParseInt(matches[2], 10, 32)
 	if err != nil {
 		panic("error parsing scale " + err.Error())
 	}
