@@ -1,0 +1,3 @@
+## 2026-09-10 - Avoid Unconditional Regex Execution in Database-to-Arrow Type Converters
+**Learning:** High-frequency type mapping functions (`Pg10ToArrow`, `SnowflakeToSchemaType`) ran `FindAllStringSubmatch` regexes for timestamp, time, and numeric types on every single column type string before evaluating standard `switch` type cases. Because 90%+ of database columns use exact standard names (e.g. `boolean`, `integer`, `text`, `uuid`, `json`), running complex regex matching first incurred heavy CPU time and unnecessary slice allocations.
+**Action:** In string type parsers, always evaluate exact-match `switch` statements first, guard parameterized parsers with `strings.HasPrefix`, and use `FindStringSubmatch` instead of `FindAllStringSubmatch`.
