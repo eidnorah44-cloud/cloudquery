@@ -353,3 +353,12 @@ func Test_unsupportedPlatformSourceError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, `"cloudquery/postgresql" is not supported by your CloudQuery Platform`)
 }
+
+func BenchmarkExtractYamlFromMarkdownCodeBlock(b *testing.B) {
+	markdown := awsExample
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = extractYamlFromMarkdownCodeBlock(markdown)
+	}
+}
