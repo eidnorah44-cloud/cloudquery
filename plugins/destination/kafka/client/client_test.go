@@ -50,3 +50,38 @@ func TestPlugin(t *testing.T) {
 		},
 	)
 }
+
+func TestCreateTLSConfigurationInvalidCA(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	certFile := tmpDir + "/cert.pem"
+	keyFile := tmpDir + "/key.pem"
+	caFile := tmpDir + "/ca.pem"
+
+	// Write dummy keypair (not a real cert, but tls.LoadX509KeyPair checks syntax)
+	// We'll test invalid CA handling specifically.
+	// First let's write invalid CA file content.
+	if err := os.WriteFile(caFile, []byte("invalid-ca-content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certFile, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	userSpec := &spec.Spec{
+		TlsDetails: &spec.TlsDetails{
+			CertFile: &certFile,
+			KeyFile:  &keyFile,
+			CaFile:   &caFile,
+		},
+	}
+
+	// Should fail on tls.LoadX509KeyPair or AppendCertsFromPEM
+	_, err := createTLSConfiguration(userSpec)
+	if err == nil {
+		t.Fatal("expected error when creating TLS configuration with invalid files")
+	}
+}
