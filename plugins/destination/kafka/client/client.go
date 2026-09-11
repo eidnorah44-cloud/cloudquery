@@ -45,7 +45,12 @@ func createTLSConfiguration(userSpec *spec.Spec) (*tls.Config, error) {
 		}
 
 		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+		// Security: Validate that the CA PEM data actually contained valid certificate(s).
+		// Silently ignoring AppendCertsFromPEM failure could cause TLS connections to fail
+		// back to default CAs or accept untrusted certs depending on verification settings.
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			return nil, fmt.Errorf("failed to append CA certificates: invalid PEM data")
+		}
 		t.Certificates = []tls.Certificate{cert}
 		t.RootCAs = caCertPool
 	}
