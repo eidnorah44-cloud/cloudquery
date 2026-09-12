@@ -21,6 +21,11 @@ func TestReplaceVariables(t *testing.T) {
 			expect:     "@@something",
 		},
 		{
+			src:        "@@plugins.connection",
+			connection: "localhost:7777",
+			expectErr:  true,
+		},
+		{
 			src:        "@@plugins.aws",
 			connection: "localhost:7777",
 			expectErr:  true,
@@ -81,4 +86,30 @@ func TestReplaceVariables(t *testing.T) {
 			t.Fatalf("ReplaceVariables(%q) = %q, want %q", c.src, res, c.expect)
 		}
 	}
+}
+
+func BenchmarkReplaceVariables(b *testing.B) {
+	vars := Variables{
+		Plugins: map[string]PluginVariables{
+			"aws": {
+				Connection: "localhost:7777",
+			},
+		},
+	}
+	srcWithVar := "inside @@plugins.aws.connection string multiple times @@plugins.aws.connection"
+	srcNoVar := "nothing to replace in this spec string at all"
+
+	b.Run("NoVar", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_, _ = ReplaceVariables(srcNoVar, vars, true)
+		}
+	})
+
+	b.Run("WithVar", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_, _ = ReplaceVariables(srcWithVar, vars, true)
+		}
+	})
 }
