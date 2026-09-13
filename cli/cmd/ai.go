@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	gosync "sync"
 	"syscall"
@@ -297,20 +298,41 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 	return nil
 }
 
+// sanitizeFilename cleans the input and strips directory elements to prevent path traversal risks.
+func sanitizeFilename(filename string) (string, error) {
+	clean := filepath.Base(filepath.Clean(filename))
+	if clean == "." || clean == "/" || clean == ".." || clean == "\\" {
+		return "", fmt.Errorf("invalid or path traversal filename: %s", filename)
+	}
+	return clean, nil
+}
+
 func createSpecFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".yaml", []byte(content), 0644)
+	safeName, err := sanitizeFilename(filenameWithoutExtension)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(safeName+".yaml", []byte(content), 0644)
 }
 
 func createSQLFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".sql", []byte(content), 0644)
+	safeName, err := sanitizeFilename(filenameWithoutExtension)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(safeName+".sql", []byte(content), 0644)
 }
 
 func cloudqueryTest(filenameWithoutExtension string) string {
-	cmd := exec.Command("cloudquery", "test", filenameWithoutExtension+".yaml")
+	safeName, err := sanitizeFilename(filenameWithoutExtension)
+	if err != nil {
+		return fmt.Sprintf("cloudquery test failed: %v", err)
+	}
+	cmd := exec.Command("cloudquery", "test", safeName+".yaml")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return fmt.Sprintf("cloudquery test failed: %v\nOutput:\n%s", err, out.String())
 	}
