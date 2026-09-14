@@ -1074,3 +1074,43 @@ func TestSpecReaderWithoutValidation_SourceOnly(t *testing.T) {
 	require.NoError(t, r.SetDestinationsAndValidate([]*Destination{dest}))
 	require.Equal(t, dest, r.GetDestinationByName("platform"))
 }
+
+func TestGetDestinationNamesForSource(t *testing.T) {
+	r := newSpecReader()
+	r.sourcesMap["source1"] = &Source{
+		Metadata:     Metadata{Name: "source1"},
+		Destinations: []string{"dest1", "dest2", "missing_dest"},
+	}
+	r.destinationsMap["dest1"] = &Destination{
+		Metadata: Metadata{Name: "dest1"},
+	}
+	r.destinationsMap["dest2"] = &Destination{
+		Metadata: Metadata{Name: "dest2"},
+	}
+
+	names := r.GetDestinationNamesForSource("source1")
+	require.Equal(t, []string{"dest1", "dest2"}, names)
+
+	nilNames := r.GetDestinationNamesForSource("nonexistent")
+	require.Nil(t, nilNames)
+}
+
+func BenchmarkGetDestinationNamesForSource(b *testing.B) {
+	r := newSpecReader()
+	destNames := []string{"dest1", "dest2", "dest3", "dest4", "dest5"}
+	r.sourcesMap["source1"] = &Source{
+		Metadata:     Metadata{Name: "source1"},
+		Destinations: destNames,
+	}
+	for _, name := range destNames {
+		r.destinationsMap[name] = &Destination{
+			Metadata: Metadata{Name: name},
+		}
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = r.GetDestinationNamesForSource("source1")
+	}
+}
