@@ -429,3 +429,19 @@ func copyTempFile(t *testing.T, src, destName string) string {
 	require.NoError(t, err)
 	return fullpath
 }
+
+func TestEnsureValidFilenamePathTraversal(t *testing.T) {
+	tempdir := t.TempDir()
+
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0644))
+
+	_, err := ensureValidFilename("../secret.txt", tempdir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside document directory")
+
+	_, err = ensureValidFilename(outsideFile, tempdir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside document directory")
+}
