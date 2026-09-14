@@ -271,26 +271,35 @@ func ensureValidFilename(filename, absDir string) (string, error) {
 		return "", nil // skip
 	}
 
+	var targetPath string
 	if u.Scheme == "" {
-		// it's a local file
 		if filepath.IsAbs(filename) {
-			return filename, nil
+			targetPath = filename
+		} else {
+			targetPath = filepath.Join(absDir, filename)
 		}
-
-		return filepath.Join(absDir, filename), nil
-	} else if u.Scheme != "file" {
+	} else if u.Scheme == "file" {
+		if u.Host != "" && u.Host != "localhost" {
+			return "", fmt.Errorf("invalid file URL %s", filename)
+		}
+		p := u.Path
+		if strings.HasPrefix(p, "/") && os.PathSeparator == '\\' {
+			p = strings.TrimPrefix(p, "/")
+		}
+		targetPath = filepath.FromSlash(p)
+	} else {
 		return "", nil // skip
 	}
 
-	if u.Host != "" && u.Host != "localhost" {
-		return "", fmt.Errorf("invalid file URL %s", filename)
+	// Security: Prevent path traversal by ensuring target path resides strictly inside absDir
+	absDirClean := filepath.Clean(absDir)
+	targetPathClean := filepath.Clean(targetPath)
+	rel, err := filepath.Rel(absDirClean, targetPathClean)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
+		return "", fmt.Errorf("image path %q is outside document directory %q", filename, absDir)
 	}
-	p := u.Path
-	if strings.HasPrefix(p, "/") && os.PathSeparator == '\\' {
-		p = strings.TrimPrefix(p, "/")
-	}
-	filename = filepath.FromSlash(p)
-	return filename, nil
+
+	return targetPathClean, nil
 }
 
 func sha1sum(filename string) (string, error) {
