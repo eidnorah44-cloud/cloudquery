@@ -19,8 +19,14 @@ var allowedEnvPrefixes = []string{
 // minRedactingLength is the minimum length of an environment variable value for it to be redacted
 const minRedactingLength = 4
 
+type secretPair struct {
+	val []byte
+	key []byte
+}
+
 type SecretAwareRedactor struct {
-	secrets map[string]string
+	secrets      map[string]string
+	secretsBytes []secretPair
 }
 
 func NewSecretAwareRedactor() *SecretAwareRedactor {
@@ -31,9 +37,12 @@ func (s *SecretAwareRedactor) RedactStr(msg string) string {
 	return string(s.RedactBytes([]byte(msg)))
 }
 
+// RedactBytes replaces sensitive values in msg with their corresponding environment variable names.
+// Performance Optimization: Uses pre-converted byte slices (secretsBytes) to avoid repeated heap
+// allocations for string-to-byte-slice conversions on every RedactBytes / stream Write call.
 func (s *SecretAwareRedactor) RedactBytes(msg []byte) []byte {
-	for v, k := range s.secrets {
-		msg = bytes.ReplaceAll(msg, []byte(v), []byte(k))
+	for _, pair := range s.secretsBytes {
+		msg = bytes.ReplaceAll(msg, pair.val, pair.key)
 	}
 	return msg
 }
@@ -49,7 +58,21 @@ func (s *SecretAwareRedactor) AddSecretEnv(envs []string) {
 			continue
 		}
 
-		s.secrets[parts[1]] = parts[0]
+		if prevKey, ok := s.secrets[parts[1]]; !ok {
+			s.secrets[parts[1]] = parts[0]
+			s.secretsBytes = append(s.secretsBytes, secretPair{
+				val: []byte(parts[1]),
+				key: []byte(parts[0]),
+			})
+		} else if prevKey != parts[0] {
+			s.secrets[parts[1]] = parts[0]
+			for i := range s.secretsBytes {
+				if string(s.secretsBytes[i].val) == parts[1] {
+					s.secretsBytes[i].key = []byte(parts[0])
+					break
+				}
+			}
+		}
 	}
 }
 
