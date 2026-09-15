@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	gosync "sync"
 	"syscall"
@@ -298,15 +299,21 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 }
 
 func createSpecFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".yaml", []byte(content), 0644)
+	// Sanitize filename to prevent path traversal vulnerabilities
+	safeName := filepath.Base(filenameWithoutExtension)
+	return os.WriteFile(safeName+".yaml", []byte(content), 0644)
 }
 
 func createSQLFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".sql", []byte(content), 0644)
+	// Sanitize filename to prevent path traversal vulnerabilities
+	safeName := filepath.Base(filenameWithoutExtension)
+	return os.WriteFile(safeName+".sql", []byte(content), 0644)
 }
 
 func cloudqueryTest(filenameWithoutExtension string) string {
-	cmd := exec.Command("cloudquery", "test", filenameWithoutExtension+".yaml")
+	// Sanitize filename to prevent path traversal vulnerabilities
+	safeName := filepath.Base(filenameWithoutExtension)
+	cmd := exec.Command("cloudquery", "test", safeName+".yaml")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
