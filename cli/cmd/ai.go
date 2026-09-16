@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	gosync "sync"
 	"syscall"
@@ -297,20 +298,48 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 	return nil
 }
 
+// validateFilename prevents path traversal attacks by validating that the user-supplied filename
+// does not contain path separators or parent directory references ("..").
+func validateFilename(filename string) (string, error) {
+	if filename == "" {
+		return "", fmt.Errorf("filename cannot be empty")
+	}
+	if strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
+		return "", fmt.Errorf("invalid filename %q: path traversal elements not allowed", filename)
+	}
+	cleaned := filepath.Base(filename)
+	if cleaned == "." || cleaned == ".." || cleaned == "/" {
+		return "", fmt.Errorf("invalid filename %q", filename)
+	}
+	return cleaned, nil
+}
+
 func createSpecFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".yaml", []byte(content), 0644)
+	cleanName, err := validateFilename(filenameWithoutExtension)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cleanName+".yaml", []byte(content), 0644)
 }
 
 func createSQLFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".sql", []byte(content), 0644)
+	cleanName, err := validateFilename(filenameWithoutExtension)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cleanName+".sql", []byte(content), 0644)
 }
 
 func cloudqueryTest(filenameWithoutExtension string) string {
-	cmd := exec.Command("cloudquery", "test", filenameWithoutExtension+".yaml")
+	cleanName, err := validateFilename(filenameWithoutExtension)
+	if err != nil {
+		return fmt.Sprintf("cloudquery test failed: %v", err)
+	}
+	cmd := exec.Command("cloudquery", "test", cleanName+".yaml")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return fmt.Sprintf("cloudquery test failed: %v\nOutput:\n%s", err, out.String())
 	}
