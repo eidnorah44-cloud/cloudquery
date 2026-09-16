@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -163,10 +162,21 @@ func pluginsSorter(prioritySlice []string) func(a, b cqapi.ListPlugin) int {
 	}
 }
 
-func extractYamlFromMarkdownCodeBlock(markdown string) string {
-	re := regexp.MustCompile("```yaml.*?\n([\\s\\S]+?)\n```")
+var (
+	// reYamlCodeBlock extracts YAML code blocks from markdown documentation.
+	reYamlCodeBlock = regexp.MustCompile("```yaml.*?\n([\\s\\S]+?)\n```")
 
-	matches := re.FindStringSubmatch(markdown)
+	// defaultConfigTmpl is pre-compiled to avoid parsing the template on every plugin config generation.
+	defaultConfigTmpl = template.Must(template.New("config").Parse(`kind: {{.Kind}}
+spec:
+  name: {{.Name}}
+  path: {{.TeamName}}/{{.Name}}
+  version: {{.LatestVersion}}
+`))
+)
+
+func extractYamlFromMarkdownCodeBlock(markdown string) string {
+	matches := reYamlCodeBlock.FindStringSubmatch(markdown)
 	if len(matches) < 2 {
 		return ""
 	}
@@ -175,18 +185,8 @@ func extractYamlFromMarkdownCodeBlock(markdown string) string {
 }
 
 func defaultConfigForPlugin(plugin cqapi.ListPlugin) *strings.Builder {
-	tmpl := `kind: {{.Kind}}
-spec:
-  name: {{.Name}}
-  path: {{.TeamName}}/{{.Name}}
-  version: {{.LatestVersion}}
-`
-	var buf bytes.Buffer
-	t := template.Must(template.New("config").Parse(tmpl))
-	_ = t.Execute(&buf, plugin)
-
-	sb := strings.Builder{}
-	sb.WriteString(buf.String())
+	var sb strings.Builder
+	_ = defaultConfigTmpl.Execute(&sb, plugin)
 	return &sb
 }
 
