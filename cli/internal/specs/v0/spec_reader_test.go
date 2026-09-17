@@ -1048,6 +1048,39 @@ spec:
   tables: ["*"]
 `
 
+func TestGetDestinationNamesForSource(t *testing.T) {
+	p := writeTempSpec(t, `
+kind: source
+spec:
+  name: test-source
+  path: cloudquery/test
+  version: v1.0.0
+  destinations: ["dest1", "dest2"]
+  tables: ["*"]
+---
+kind: destination
+spec:
+  name: dest1
+  path: cloudquery/postgresql
+  version: v1.0.0
+---
+kind: destination
+spec:
+  name: dest2
+  path: cloudquery/snowflake
+  version: v1.0.0
+`)
+
+	r, err := NewSpecReader([]string{p})
+	require.NoError(t, err)
+
+	names := r.GetDestinationNamesForSource("test-source")
+	require.Equal(t, []string{"dest1", "dest2"}, names)
+
+	nilNames := r.GetDestinationNamesForSource("non-existent")
+	require.Nil(t, nilNames)
+}
+
 func TestSpecReaderWithoutValidation_SourceOnly(t *testing.T) {
 	p := writeTempSpec(t, sourceOnlySpec)
 
