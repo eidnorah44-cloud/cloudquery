@@ -109,15 +109,24 @@ func (t *RecordTransformer) TransformSchema(sc *arrow.Schema) *arrow.Schema {
 
 	transformedFields := make([]arrow.Field, len(fields))
 	for i, field := range fields {
-		mdMap := field.Metadata.ToMap()
-		if _, ok := mdMap[schema.MetadataUnique]; ok && t.removeUniqueConstraints {
-			delete(mdMap, schema.MetadataUnique)
+		needRemoveUnique := t.removeUniqueConstraints && field.Metadata.FindKey(schema.MetadataUnique) >= 0
+		needRemovePK := t.removePks && field.Metadata.FindKey(schema.MetadataPrimaryKey) >= 0
+		needAddCQIDPK := field.Name == cqIDColumnName && t.cqIDPrimaryKey
+
+		// Fast path: avoid allocating map and recreating metadata when no metadata modifications apply
+		if !needRemoveUnique && !needRemovePK && !needAddCQIDPK {
+			transformedFields[i] = field
+			continue
 		}
 
-		if _, ok := mdMap[schema.MetadataPrimaryKey]; ok && t.removePks {
+		mdMap := field.Metadata.ToMap()
+		if needRemoveUnique {
+			delete(mdMap, schema.MetadataUnique)
+		}
+		if needRemovePK {
 			delete(mdMap, schema.MetadataPrimaryKey)
 		}
-		if field.Name == cqIDColumnName && t.cqIDPrimaryKey {
+		if needAddCQIDPK {
 			mdMap[schema.MetadataPrimaryKey] = schema.MetadataTrue
 		}
 
