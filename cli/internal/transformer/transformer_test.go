@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -163,5 +164,27 @@ func TestRecord(t *testing.T) {
 				t.Fatalf("expected record %v, got %v", expectedRecord, transformedRecord)
 			}
 		})
+	}
+}
+
+func BenchmarkTransformSchema(b *testing.B) {
+	fields := make([]arrow.Field, 50)
+	for i := 0; i < 50; i++ {
+		fields[i] = arrow.Field{
+			Name:     fmt.Sprintf("col_%d", i),
+			Type:     arrow.PrimitiveTypes.Int64,
+			Nullable: true,
+			Metadata: arrow.MetadataFrom(map[string]string{
+				"comment": fmt.Sprintf("column %d", i),
+			}),
+		}
+	}
+	sc := arrow.NewSchema(fields, nil)
+	t := NewRecordTransformer(WithSourceNameColumn("test_source"), WithSyncTimeColumn(time.Now()))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = t.TransformSchema(sc)
 	}
 }
