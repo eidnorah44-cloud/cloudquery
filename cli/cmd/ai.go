@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	gosync "sync"
 	"syscall"
@@ -297,16 +298,33 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 	return nil
 }
 
+// sanitizeFilename cleans and extracts the base filename to prevent path traversal vulnerabilities.
+func sanitizeFilename(filename string) string {
+	cleaned := filepath.Base(filepath.Clean(filename))
+	// Strip any leading dashes or dots to prevent flag injection or hidden files
+	cleaned = strings.TrimLeft(cleaned, "-.")
+	if cleaned == "" {
+		return "cloudquery"
+	}
+	return cleaned
+}
+
 func createSpecFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".yaml", []byte(content), 0644)
+	// SECURITY: Sanitize user/AI-provided filename to prevent path traversal
+	safeFilename := sanitizeFilename(filenameWithoutExtension)
+	return os.WriteFile(safeFilename+".yaml", []byte(content), 0644)
 }
 
 func createSQLFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".sql", []byte(content), 0644)
+	// SECURITY: Sanitize user/AI-provided filename to prevent path traversal
+	safeFilename := sanitizeFilename(filenameWithoutExtension)
+	return os.WriteFile(safeFilename+".sql", []byte(content), 0644)
 }
 
 func cloudqueryTest(filenameWithoutExtension string) string {
-	cmd := exec.Command("cloudquery", "test", filenameWithoutExtension+".yaml")
+	// SECURITY: Sanitize user/AI-provided filename to prevent path traversal or flag injection
+	safeFilename := sanitizeFilename(filenameWithoutExtension)
+	cmd := exec.Command("cloudquery", "test", safeFilename+".yaml")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
