@@ -84,6 +84,46 @@ func TestSanitizeJSONKeys(t *testing.T) {
 	}
 }
 
+func TestSanitizeKey(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"foo", "foo"},
+		{"foo_bar_123", "foo_bar_123"},
+		{"foo-bar", "foo_bar"},
+		{"foo:bar.baz*", "foo_bar_baz_"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		got := sanitizeKey(tc.input)
+		if got != tc.expected {
+			t.Errorf("sanitizeKey(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func BenchmarkSanitizeJSONKeysForObject(b *testing.B) {
+	m := map[string]any{
+		"id":         "123",
+		"name":       "test",
+		"created_at": "2023-01-01",
+		"tags": map[string]any{
+			"env":            "prod",
+			"cloud-provider": "aws",
+		},
+		"details": []any{
+			map[string]any{"key_one": "val1", "key:two": "val2"},
+		},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = sanitizeJSONKeysForObject(m)
+	}
+}
+
 func TestReplacePathVariables(t *testing.T) {
 	cases := []struct {
 		inputPath    string
