@@ -244,6 +244,14 @@ text
 			expect:      nil,
 			expectError: `error processing image "path.to/img2/image.png": open`,
 		},
+		{
+			name: "path traversal image url",
+			contents: `# Title
+![](../../etc/passwd)
+`,
+			expect:      nil,
+			expectError: `path traversal attempt in image path "../../etc/passwd"`,
+		},
 	}
 
 	tempdir := t.TempDir()
