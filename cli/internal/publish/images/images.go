@@ -277,7 +277,14 @@ func ensureValidFilename(filename, absDir string) (string, error) {
 			return filename, nil
 		}
 
-		return filepath.Join(absDir, filename), nil
+		// Security: Prevent path traversal by ensuring relative path does not escape absDir
+		target := filepath.Join(absDir, filename)
+		rel, err := filepath.Rel(absDir, target)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("path traversal attempt in image path %q", filename)
+		}
+
+		return target, nil
 	} else if u.Scheme != "file" {
 		return "", nil // skip
 	}
