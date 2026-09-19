@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"regexp"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -20,8 +19,6 @@ import (
 	"github.com/cloudquery/plugin-sdk/v4/types"
 	"github.com/google/uuid"
 )
-
-var reInvalidJSONKey = regexp.MustCompile(`\W`)
 
 func (c *Client) createObject(ctx context.Context, table *schema.Table, objKey string) (*filetypes.Stream, error) {
 	s, err := c.Client.StartStream(table, func(r io.Reader) error {
@@ -157,7 +154,7 @@ func sanitizeJSONKeysForObject(data any) any {
 	case map[string]any:
 		res := make(map[string]any, len(data))
 		for k, v := range data {
-			res[reInvalidJSONKey.ReplaceAllString(k, "_")] = sanitizeJSONKeysForObject(v)
+			res[sanitizeKey(k)] = sanitizeJSONKeysForObject(v)
 		}
 		return res
 	case []any:
@@ -168,4 +165,23 @@ func sanitizeJSONKeysForObject(data any) any {
 	default:
 		return data
 	}
+}
+
+// sanitizeKey replaces all invalid non-word characters (\W in regex) with underscores.
+// Bolt optimization: avoids regexp overhead and string allocations when all characters are already valid word characters ([a-zA-Z0-9_]).
+func sanitizeKey(k string) string {
+	for i := 0; i < len(k); i++ {
+		ch := k[i]
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			buf := []byte(k)
+			for j := i; j < len(buf); j++ {
+				c := buf[j]
+				if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+					buf[j] = '_'
+				}
+			}
+			return string(buf)
+		}
+	}
+	return k
 }
