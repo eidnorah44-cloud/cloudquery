@@ -1048,6 +1048,21 @@ spec:
   tables: ["*"]
 `
 
+func TestGetDestinationNamesForSource(t *testing.T) {
+	reader := newSpecReader()
+	reader.sourcesMap["src1"] = &Source{
+		Destinations: []string{"dst1", "dst2", "missing_dst"},
+	}
+	reader.destinationsMap["dst1"] = &Destination{Metadata: Metadata{Name: "dst1"}}
+	reader.destinationsMap["dst2"] = &Destination{Metadata: Metadata{Name: "dst2"}}
+
+	names := reader.GetDestinationNamesForSource("src1")
+	require.Equal(t, []string{"dst1", "dst2"}, names)
+
+	nilNames := reader.GetDestinationNamesForSource("nonexistent")
+	require.Nil(t, nilNames)
+}
+
 func TestSpecReaderWithoutValidation_SourceOnly(t *testing.T) {
 	p := writeTempSpec(t, sourceOnlySpec)
 
