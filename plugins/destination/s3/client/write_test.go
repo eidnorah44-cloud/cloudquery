@@ -37,6 +37,27 @@ func TestSanitizeJSONRawMessage(t *testing.T) {
 	}
 }
 
+func TestSanitizeKey(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"foo", "foo"},
+		{"foo_bar_123", "foo_bar_123"},
+		{"foo-bar", "foo_bar"},
+		{"foo:bar", "foo_bar"},
+		{"ta.rget*", "ta_rget_"},
+		{"hello world", "hello_world"},
+		{"café", "caf_"},
+	}
+
+	for _, tt := range tests {
+		got := sanitizeKey(tt.input)
+		require.Equal(t, tt.expected, got, "input: %q", tt.input)
+	}
+}
+
 func TestSanitizeJSONKeys(t *testing.T) {
 	m := map[string]any{
 		"foo": "bar",
@@ -81,6 +102,36 @@ func TestSanitizeJSONKeys(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, sanitized); diff != "" {
 		t.Errorf("sanitizeJSONKeys() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func BenchmarkSanitizeJSONKeys(b *testing.B) {
+	m := map[string]any{
+		"foo": "bar",
+		"bar": map[string]any{
+			"foo-bar": "baz",
+		},
+		"foo:bar":     "baz",
+		"foo-bar-baz": []any{"baz", map[string]any{"foo:bar": "baz"}},
+		"string": map[string]string{
+			"foo-bar": "baz",
+		},
+		"int": map[string]int{
+			"foo-bar": 123,
+		},
+		"pointer": map[string]*string{
+			"foo-bar": &[]string{"baz"}[0],
+		},
+	}
+
+	bytes, _ := json.Marshal(m)
+	var data any
+	_ = json.Unmarshal(bytes, &data)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = sanitizeJSONKeysForObject(data)
 	}
 }
 
