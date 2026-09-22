@@ -143,6 +143,19 @@ func TestPg10ToArrow(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkPg10ToArrow(b *testing.B) {
+	typesToTest := []string{
+		"boolean", "bigint", "uuid", "text[]", "jsonb",
+		"timestamp", "timestamp(3) with time zone", "numeric(38,15)", "varchar(50)",
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, t := range typesToTest {
+			_ = Pg10ToArrow(t)
+		}
+	}
+}
 func TestCockroachToArrow(t *testing.T) {
 	cases := []struct {
 		pgType string

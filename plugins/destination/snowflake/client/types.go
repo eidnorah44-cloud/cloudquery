@@ -88,12 +88,14 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 		return arrow.FixedWidthTypes.Timestamp_ns, true
 	}
 
-	matches := reTimestamp.FindAllStringSubmatch(t, -1)
+	// Use FindStringSubmatch instead of FindAllStringSubmatch since we only need the first match,
+	// avoiding extra memory allocations and regex scanning overhead.
+	matches := reTimestamp.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
-	precisionStr := matches[0][1]
+	precisionStr := matches[1]
 	precision := 9 // default
 	if precisionStr != "" {
 		p, err := strconv.Atoi(precisionStr)
@@ -117,12 +119,13 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 }
 
 func parseTime(t string) (arrow.DataType, bool) {
-	matches := reTime.FindAllStringSubmatch(t, -1)
+	// Use FindStringSubmatch instead of FindAllStringSubmatch to prevent unnecessary slice allocations.
+	matches := reTime.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
-	precisionStr := matches[0][1]
+	precisionStr := matches[1]
 	precision := 9 // default
 	if precisionStr != "" {
 		p, err := strconv.Atoi(precisionStr)
@@ -146,21 +149,22 @@ func parseTime(t string) (arrow.DataType, bool) {
 }
 
 func parseNumeric(t string) (arrow.DataType, bool) {
-	matches := reNumeric.FindAllStringSubmatch(t, -1)
+	// Use FindStringSubmatch instead of FindAllStringSubmatch to prevent unnecessary slice allocations.
+	matches := reNumeric.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
 	// No precision/scale specified - default to Int64
-	if len(matches[0]) < 3 || matches[0][1] == "" {
+	if len(matches) < 3 || matches[1] == "" {
 		return arrow.PrimitiveTypes.Int64, true
 	}
 
-	precision, err := strconv.ParseInt(matches[0][1], 10, 32)
+	precision, err := strconv.ParseInt(matches[1], 10, 32)
 	if precision == 0 || err != nil {
 		panic("precision cannot be 0")
 	}
-	scale, err := strconv.ParseInt(matches[0][2], 10, 32)
+	scale, err := strconv.ParseInt(matches[2], 10, 32)
 	if err != nil {
 		panic("error parsing scale " + err.Error())
 	}
