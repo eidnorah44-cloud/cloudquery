@@ -88,6 +88,10 @@ type transportWithRegistryAuth struct {
 
 func newTransportWithRegistryAuth(insecureSkipVerify bool, registryAuth string) *transportWithRegistryAuth {
 	baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+	// Ensure TLSClientConfig is non-nil before configuring TLS properties to avoid nil pointer panics
+	if baseTransport.TLSClientConfig == nil {
+		baseTransport.TLSClientConfig = &tls.Config{}
+	}
 	baseTransport.TLSClientConfig.InsecureSkipVerify = insecureSkipVerify
 	return &transportWithRegistryAuth{
 		baseTransport: baseTransport,
