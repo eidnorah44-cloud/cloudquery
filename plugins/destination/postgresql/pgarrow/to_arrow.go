@@ -21,18 +21,7 @@ func Pg10ToArrow(t string) arrow.DataType {
 		return arrow.ListOf(Pg10ToArrow(t[:len(t)-2]))
 	}
 
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
-	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
-	}
-
+	// Fast path: check exact match standard types first before invoking regex parsers
 	switch t {
 	case "boolean":
 		return arrow.FixedWidthTypes.Boolean
@@ -58,27 +47,38 @@ func Pg10ToArrow(t string) arrow.DataType {
 		return cqtypes.ExtensionTypes.Inet
 	case "macaddr", "macaddr8":
 		return cqtypes.ExtensionTypes.MAC
-	default:
-		return arrow.BinaryTypes.String
+	case "timestamp", "timestamptz", "timestamp with time zone", "timestamp without time zone":
+		return arrow.FixedWidthTypes.Timestamp_us
+	case "time", "time with time zone", "time without time zone":
+		return arrow.FixedWidthTypes.Time64us
+	case "numeric":
+		return &arrow.Decimal128Type{Precision: 38, Scale: 0}
 	}
+
+	// Fallback for parameterized types: only run regex matching if prefix matches
+	if strings.HasPrefix(t, "timestamp") || strings.HasPrefix(t, "timestamptz") {
+		if got, matched := parseTimestamp(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "time") {
+		if got, matched := parseTime(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "numeric") || strings.HasPrefix(t, "decimal") || strings.HasPrefix(t, "number") {
+		if got, matched := parseNumeric(t); matched {
+			return got
+		}
+	}
+
+	return arrow.BinaryTypes.String
 }
 
 func CockroachToArrow(t string) arrow.DataType {
 	t = normalize(t)
 	if strings.HasSuffix(t, "[]") {
 		return arrow.ListOf(CockroachToArrow(t[:len(t)-2]))
-	}
-
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
-	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
 	}
 
 	switch t {
@@ -107,27 +107,37 @@ func CockroachToArrow(t string) arrow.DataType {
 		return cqtypes.ExtensionTypes.Inet
 	// Cockroach lacks MAC type
 	// case "macaddr", "macaddr8":
-	default:
-		return arrow.BinaryTypes.String
+	case "timestamp", "timestamptz", "timestamp with time zone", "timestamp without time zone":
+		return arrow.FixedWidthTypes.Timestamp_us
+	case "time", "time with time zone", "time without time zone":
+		return arrow.FixedWidthTypes.Time64us
+	case "numeric":
+		return &arrow.Decimal128Type{Precision: 38, Scale: 0}
 	}
+
+	if strings.HasPrefix(t, "timestamp") || strings.HasPrefix(t, "timestamptz") {
+		if got, matched := parseTimestamp(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "time") {
+		if got, matched := parseTime(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "numeric") || strings.HasPrefix(t, "decimal") || strings.HasPrefix(t, "number") {
+		if got, matched := parseNumeric(t); matched {
+			return got
+		}
+	}
+
+	return arrow.BinaryTypes.String
 }
 
 func CrateDBToArrow(t string) arrow.DataType {
 	t = normalize(t)
 	if strings.HasSuffix(t, "[]") {
 		return arrow.ListOf(Pg10ToArrow(t[:len(t)-2]))
-	}
-
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
-	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
 	}
 
 	switch t {
@@ -153,9 +163,31 @@ func CrateDBToArrow(t string) arrow.DataType {
 		return cqtypes.ExtensionTypes.Inet
 	// CrateDB does not support these types
 	// case "macaddr", "macaddr8", "uuid":
-	default:
-		return arrow.BinaryTypes.String
+	case "timestamp", "timestamptz", "timestamp with time zone", "timestamp without time zone":
+		return arrow.FixedWidthTypes.Timestamp_us
+	case "time", "time with time zone", "time without time zone":
+		return arrow.FixedWidthTypes.Time64us
+	case "numeric":
+		return &arrow.Decimal128Type{Precision: 38, Scale: 0}
 	}
+
+	if strings.HasPrefix(t, "timestamp") || strings.HasPrefix(t, "timestamptz") {
+		if got, matched := parseTimestamp(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "time") {
+		if got, matched := parseTime(t); matched {
+			return got
+		}
+	}
+	if strings.HasPrefix(t, "numeric") || strings.HasPrefix(t, "decimal") || strings.HasPrefix(t, "number") {
+		if got, matched := parseNumeric(t); matched {
+			return got
+		}
+	}
+
+	return arrow.BinaryTypes.String
 }
 
 func normalize(t string) string {
@@ -169,11 +201,11 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 		return arrow.FixedWidthTypes.Timestamp_us, true
 	}
 
-	matches := reTimestamp.FindAllStringSubmatch(t, -1)
+	matches := reTimestamp.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
-	switch matches[0][1] {
+	switch matches[1] {
 	case "0":
 		return arrow.FixedWidthTypes.Timestamp_s, true
 	case "1", "2", "3":
@@ -184,11 +216,11 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 }
 
 func parseTime(t string) (arrow.DataType, bool) {
-	matches := reTime.FindAllStringSubmatch(t, -1)
+	matches := reTime.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
-	switch matches[0][1] {
+	switch matches[1] {
 	case "0":
 		return arrow.FixedWidthTypes.Time32s, true
 	case "1", "2", "3":
@@ -199,21 +231,21 @@ func parseTime(t string) (arrow.DataType, bool) {
 }
 
 func parseNumeric(t string) (arrow.DataType, bool) {
-	matches := reNumeric.FindAllStringSubmatch(t, -1)
+	matches := reNumeric.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
-	if len(matches[0]) < 3 || matches[0][1] == "" {
+	if len(matches) < 3 || matches[1] == "" {
 		// no precision/scale specified
 		return &arrow.Decimal128Type{Precision: 38, Scale: 0}, true
 	}
 
-	precision, err := strconv.ParseInt(matches[0][1], 10, 32)
+	precision, err := strconv.ParseInt(matches[1], 10, 32)
 	if precision == 0 || err != nil {
 		panic("precision cannot be 0")
 	}
-	scale, err := strconv.ParseInt(matches[0][2], 10, 32)
+	scale, err := strconv.ParseInt(matches[2], 10, 32)
 	if err != nil {
 		panic("error parsing scale " + err.Error())
 	}
