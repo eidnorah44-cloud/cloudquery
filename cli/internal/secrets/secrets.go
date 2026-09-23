@@ -2,9 +2,11 @@ package secrets
 
 import (
 	"bytes"
+	"cmp"
 	"io"
 	"slices"
 	"strings"
+	"sync"
 )
 
 var allowedEnvPrefixes = []string{
@@ -19,7 +21,13 @@ var allowedEnvPrefixes = []string{
 // minRedactingLength is the minimum length of an environment variable value for it to be redacted
 const minRedactingLength = 4
 
+type secretKV struct {
+	val []byte
+	key []byte
+}
+
 type SecretAwareRedactor struct {
+	mu      sync.RWMutex
 	secrets map[string]string
 }
 
@@ -32,13 +40,32 @@ func (s *SecretAwareRedactor) RedactStr(msg string) string {
 }
 
 func (s *SecretAwareRedactor) RedactBytes(msg []byte) []byte {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Security concern: Longer secrets containing shorter secrets as substrings must be redacted first.
+	// Redacting a shorter secret first would corrupt the longer secret and leak sensitive substrings.
+	items := make([]secretKV, 0, len(s.secrets))
 	for v, k := range s.secrets {
-		msg = bytes.ReplaceAll(msg, []byte(v), []byte(k))
+		items = append(items, secretKV{val: []byte(v), key: []byte(k)})
+	}
+	slices.SortFunc(items, func(a, b secretKV) int {
+		if c := cmp.Compare(len(b.val), len(a.val)); c != 0 {
+			return c
+		}
+		return bytes.Compare(a.val, b.val)
+	})
+
+	for _, item := range items {
+		msg = bytes.ReplaceAll(msg, item.val, item.key)
 	}
 	return msg
 }
 
 func (s *SecretAwareRedactor) AddSecretEnv(envs []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for _, v := range envs {
 		if slices.ContainsFunc(allowedEnvPrefixes, func(prefix string) bool { return strings.HasPrefix(v, prefix) }) {
 			continue

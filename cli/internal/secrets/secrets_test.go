@@ -69,6 +69,12 @@ func TestRedaction(t *testing.T) {
 			msg:  "wrong api key cqtk_test",
 			want: "wrong api key CLOUDQUERY_API_KEY",
 		},
+		{
+			name: "redacts longer substring secrets first to prevent leaking substring characters",
+			env:  []string{"SHORT_SECRET=secret", "LONG_SECRET=secret_super_long"},
+			msg:  "contains secret_super_long and secret",
+			want: "contains LONG_SECRET and SHORT_SECRET",
+		},
 	}
 	for _, tt := range tests {
 		redactor := NewSecretAwareRedactor()
@@ -85,4 +91,23 @@ func TestRedaction(t *testing.T) {
 			assert.Equal(t, tt.want, string(got))
 		})
 	}
+}
+
+func TestRedactorConcurrency(t *testing.T) {
+	redactor := NewSecretAwareRedactor()
+	redactor.AddSecretEnv([]string{"ENV_INIT=initial_secret"})
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			redactor.AddSecretEnv([]string{"ENV_DYNAMIC=dynamic_secret"})
+		}
+		close(done)
+	}()
+
+	for i := 0; i < 100; i++ {
+		_ = redactor.RedactStr("sample text with initial_secret and dynamic_secret")
+	}
+
+	<-done
 }
