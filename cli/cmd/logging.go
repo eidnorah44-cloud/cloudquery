@@ -27,7 +27,8 @@ func initLogging(noLogFile bool, logLevel *enum.Enum, logFormat *enum.Enum, logC
 		} else {
 			flags |= os.O_APPEND
 		}
-		logFile, err = os.OpenFile(logFileName, flags, 0666)
+		// Restrict log file permissions to 0600 (owner read/write only) to prevent unauthorized local users from reading or altering log files, which may contain sensitive diagnostic information.
+		logFile, err = os.OpenFile(logFileName, flags, 0600)
 		if err != nil {
 			return nil, err
 		}
