@@ -21,16 +21,15 @@ func Pg10ToArrow(t string) arrow.DataType {
 		return arrow.ListOf(Pg10ToArrow(t[:len(t)-2]))
 	}
 
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
+	// Unrolled function calls instead of allocating a slice of parsers per call
+	if got, matched := parseTimestamp(t); matched {
+		return got
 	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
+	if got, matched := parseTime(t); matched {
+		return got
+	}
+	if got, matched := parseNumeric(t); matched {
+		return got
 	}
 
 	switch t {
@@ -69,16 +68,15 @@ func CockroachToArrow(t string) arrow.DataType {
 		return arrow.ListOf(CockroachToArrow(t[:len(t)-2]))
 	}
 
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
+	// Unrolled function calls instead of allocating a slice of parsers per call
+	if got, matched := parseTimestamp(t); matched {
+		return got
 	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
+	if got, matched := parseTime(t); matched {
+		return got
+	}
+	if got, matched := parseNumeric(t); matched {
+		return got
 	}
 
 	switch t {
@@ -118,16 +116,15 @@ func CrateDBToArrow(t string) arrow.DataType {
 		return arrow.ListOf(Pg10ToArrow(t[:len(t)-2]))
 	}
 
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
+	// Unrolled function calls instead of allocating a slice of parsers per call
+	if got, matched := parseTimestamp(t); matched {
+		return got
 	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
+	if got, matched := parseTime(t); matched {
+		return got
+	}
+	if got, matched := parseNumeric(t); matched {
+		return got
 	}
 
 	switch t {
@@ -164,9 +161,16 @@ func normalize(t string) string {
 
 func parseTimestamp(t string) (arrow.DataType, bool) {
 	timestamptzPrefix := "timestamptz using"
-	t = strings.TrimPrefix(t, timestamptzPrefix)
+	if strings.HasPrefix(t, timestamptzPrefix) {
+		t = strings.TrimSpace(t[len(timestamptzPrefix):])
+	}
 	if t == "timestamptz" {
 		return arrow.FixedWidthTypes.Timestamp_us, true
+	}
+
+	// Fast prefix guard to skip expensive regex evaluation on non-timestamp types
+	if !strings.HasPrefix(t, "timestamp") {
+		return nil, false
 	}
 
 	matches := reTimestamp.FindAllStringSubmatch(t, -1)
@@ -184,6 +188,11 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 }
 
 func parseTime(t string) (arrow.DataType, bool) {
+	// Fast prefix guard to skip expensive regex evaluation on non-time types
+	if !strings.HasPrefix(t, "time") || strings.HasPrefix(t, "timestamp") || strings.HasPrefix(t, "timestamptz") {
+		return nil, false
+	}
+
 	matches := reTime.FindAllStringSubmatch(t, -1)
 	if len(matches) == 0 {
 		return nil, false
@@ -199,6 +208,11 @@ func parseTime(t string) (arrow.DataType, bool) {
 }
 
 func parseNumeric(t string) (arrow.DataType, bool) {
+	// Fast prefix guard to skip expensive regex evaluation on non-numeric types
+	if !strings.HasPrefix(t, "numeric") {
+		return nil, false
+	}
+
 	matches := reNumeric.FindAllStringSubmatch(t, -1)
 	if len(matches) == 0 {
 		return nil, false
