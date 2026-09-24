@@ -50,3 +50,23 @@ func TestInitLogging_AppendPreservesExistingFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(got), "old content")
 }
+
+func TestInitLogging_FilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	logFileName := filepath.Join(dir, "cloudquery.log")
+
+	logLevel := enum.NewEnum([]string{"trace", "debug", "info", "warn", "error"}, "info")
+	logFormat := enum.NewEnum([]string{"text", "json"}, "json")
+
+	f, err := initLogging(false, logLevel, logFormat, false, logFileName, false)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if f != nil {
+			f.Close()
+		}
+	})
+
+	info, err := os.Stat(logFileName)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0600), info.Mode().Perm())
+}
