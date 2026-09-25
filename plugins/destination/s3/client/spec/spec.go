@@ -265,19 +265,38 @@ func (s *Spec) Validate() error {
 }
 
 func (s *Spec) ReplacePathVariables(table string, fileIdentifier string, t time.Time, syncID string) string {
-	name := strings.ReplaceAll(s.Path, varTable, table)
+	name := s.Path
+	if strings.Contains(name, varTable) {
+		name = strings.ReplaceAll(name, varTable, table)
+	}
 	if strings.Contains(name, varFormat) {
 		e := string(s.Format) + s.Compression.Extension()
 		name = strings.ReplaceAll(name, varFormat, e)
 	}
-	name = strings.ReplaceAll(name, varUUID, fileIdentifier)
-	name = strings.ReplaceAll(name, varYear, t.Format("2006"))
-	name = strings.ReplaceAll(name, varMonth, t.Format("01"))
-	name = strings.ReplaceAll(name, varDay, t.Format("02"))
-	name = strings.ReplaceAll(name, varHour, t.Format("15"))
-	name = strings.ReplaceAll(name, varMinute, t.Format("04"))
-	name = strings.ReplaceAll(name, varSyncID, syncID)
-	name = strings.ReplaceAll(name, varTableHyphen, strings.ReplaceAll(table, "_", "-"))
+	if strings.Contains(name, varUUID) {
+		name = strings.ReplaceAll(name, varUUID, fileIdentifier)
+	}
+	if strings.Contains(name, varYear) {
+		name = strings.ReplaceAll(name, varYear, t.Format("2006"))
+	}
+	if strings.Contains(name, varMonth) {
+		name = strings.ReplaceAll(name, varMonth, t.Format("01"))
+	}
+	if strings.Contains(name, varDay) {
+		name = strings.ReplaceAll(name, varDay, t.Format("02"))
+	}
+	if strings.Contains(name, varHour) {
+		name = strings.ReplaceAll(name, varHour, t.Format("15"))
+	}
+	if strings.Contains(name, varMinute) {
+		name = strings.ReplaceAll(name, varMinute, t.Format("04"))
+	}
+	if strings.Contains(name, varSyncID) {
+		name = strings.ReplaceAll(name, varSyncID, syncID)
+	}
+	if strings.Contains(name, varTableHyphen) {
+		name = strings.ReplaceAll(name, varTableHyphen, strings.ReplaceAll(table, "_", "-"))
+	}
 	return filepath.Clean(name)
 }
 
