@@ -103,9 +103,22 @@ func runPluginDocsDownload(ctx context.Context, cmd *cobra.Command, args []strin
 		return errors.New("failed to read docs: nil response")
 	}
 	for _, item := range resp.JSON200.Items {
-		safeName := strings.ReplaceAll(item.Name, string(filepath.Separator), "_") + ".md"
+		// Check for path traversal in the item name prior to sanitization
+		if !filepath.IsLocal(item.Name) {
+			return fmt.Errorf("invalid document name %q: path traversal detected", item.Name)
+		}
+
+		// Sanitize path separators to ensure flat storage inside docsDir
+		safeName := strings.ReplaceAll(item.Name, "/", "_")
+		safeName = strings.ReplaceAll(safeName, "\\", "_") + ".md"
+
+		fn := filepath.Clean(filepath.Join(docsDir, safeName))
+		rel, err := filepath.Rel(filepath.Clean(docsDir), fn)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("invalid document name %q: path traversal detected", item.Name)
+		}
+
 		fmt.Print("  ", safeName, " ")
-		fn := filepath.Join(docsDir, safeName)
 		fp, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
 		if err != nil {
 			return err
