@@ -196,13 +196,23 @@ func (c *Client) transformArr(arr arrow.Array) []any {
 }
 
 func (c *Client) transformValues(r arrow.RecordBatch) [][]any {
-	results := make([][]any, r.NumRows())
+	numRows := int(r.NumRows())
+	numCols := int(r.NumCols())
 
-	for i := range results {
-		results[i] = make([]any, r.NumCols())
+	results := make([][]any, numRows)
+	if numRows == 0 || numCols == 0 {
+		return results
 	}
 
-	for i := 0; i < int(r.NumCols()); i++ {
+	// Performance optimization: Allocate a single contiguous slice for all row cells
+	// to reduce allocations from N+1 down to 2 allocations per record batch transform.
+	// 3-index slicing is used to cap slice capacity and prevent slice modification side-effects.
+	data := make([]any, numRows*numCols)
+	for i := range results {
+		results[i] = data[i*numCols : (i+1)*numCols : (i+1)*numCols]
+	}
+
+	for i := 0; i < numCols; i++ {
 		col := r.Column(i)
 		transformed := c.transformArr(col)
 		for l := 0; l < col.Len(); l++ {
