@@ -21,16 +21,15 @@ func Pg10ToArrow(t string) arrow.DataType {
 		return arrow.ListOf(Pg10ToArrow(t[:len(t)-2]))
 	}
 
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
+	// Directly invoke specialized parsers to avoid allocating a slice of parser functions per call
+	if got, matched := parseTimestamp(t); matched {
+		return got
 	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
+	if got, matched := parseTime(t); matched {
+		return got
+	}
+	if got, matched := parseNumeric(t); matched {
+		return got
 	}
 
 	switch t {
@@ -69,16 +68,15 @@ func CockroachToArrow(t string) arrow.DataType {
 		return arrow.ListOf(CockroachToArrow(t[:len(t)-2]))
 	}
 
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
+	// Directly invoke specialized parsers to avoid allocating a slice of parser functions per call
+	if got, matched := parseTimestamp(t); matched {
+		return got
 	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
+	if got, matched := parseTime(t); matched {
+		return got
+	}
+	if got, matched := parseNumeric(t); matched {
+		return got
 	}
 
 	switch t {
@@ -118,16 +116,15 @@ func CrateDBToArrow(t string) arrow.DataType {
 		return arrow.ListOf(Pg10ToArrow(t[:len(t)-2]))
 	}
 
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
+	// Directly invoke specialized parsers to avoid allocating a slice of parser functions per call
+	if got, matched := parseTimestamp(t); matched {
+		return got
 	}
-	for _, parser := range parsers {
-		got, matched := parser(t)
-		if matched {
-			return got
-		}
+	if got, matched := parseTime(t); matched {
+		return got
+	}
+	if got, matched := parseNumeric(t); matched {
+		return got
 	}
 
 	switch t {

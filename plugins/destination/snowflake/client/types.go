@@ -45,16 +45,15 @@ func SnowflakeToSchemaType(t string) arrow.DataType {
 		return arrow.ListOf(SnowflakeToSchemaType(t[:len(t)-2]))
 	}
 
-	// Try specialized parsers first
-	parsers := []func(string) (arrow.DataType, bool){
-		parseTimestamp,
-		parseTime,
-		parseNumeric,
+	// Try specialized parsers first directly to avoid allocating a slice of parser functions per call
+	if got, matched := parseTimestamp(t); matched {
+		return got
 	}
-	for _, parser := range parsers {
-		if got, matched := parser(t); matched {
-			return got
-		}
+	if got, matched := parseTime(t); matched {
+		return got
+	}
+	if got, matched := parseNumeric(t); matched {
+		return got
 	}
 
 	switch t {
