@@ -143,6 +143,31 @@ func TestPg10ToArrow(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkPg10ToArrow(b *testing.B) {
+	typesToTest := []string{
+		"timestamp(3) with time zone",
+		"time(0) without time zone",
+		"numeric(38,15)",
+		"boolean",
+		"varchar(50)[]",
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for _, t := range typesToTest {
+			_ = Pg10ToArrow(t)
+		}
+	}
+}
+
+func BenchmarkPg10ToArrowSimple(b *testing.B) {
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = Pg10ToArrow("boolean")
+	}
+}
 func TestCockroachToArrow(t *testing.T) {
 	cases := []struct {
 		pgType string
