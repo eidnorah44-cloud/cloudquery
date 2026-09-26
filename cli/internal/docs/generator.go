@@ -69,7 +69,8 @@ func NewGenerator(pluginName string, tables schema.Tables) *Generator {
 }
 
 func (g *Generator) Generate(dir string, format Format) error {
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+	// Restrict permissions to 0755 to prevent creating world-writable directories
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
