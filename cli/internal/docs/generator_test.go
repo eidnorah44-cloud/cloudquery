@@ -168,15 +168,20 @@ func TestGeneratePluginDocs(t *testing.T) {
 	t.Run("Markdown", func(t *testing.T) {
 		tmpdir := t.TempDir()
 
-		err := g.Generate(tmpdir, FormatMarkdown)
+		subDir := path.Join(tmpdir, "docs_output")
+		err := g.Generate(subDir, FormatMarkdown)
 		if err != nil {
 			t.Fatalf("unexpected error calling GeneratePluginDocs: %v", err)
 		}
 
+		fi, err := os.Stat(subDir)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0755), fi.Mode().Perm())
+
 		expectFiles := []string{"test_table.md", "relation_table.md", "relation_relation_table_a.md", "relation_relation_table_b.md", "incremental_table.md", "paid_table.md", "README.md", "test_table_with_primary_key_component.md"}
 		for _, exp := range expectFiles {
 			t.Run(exp, func(t *testing.T) {
-				output := path.Join(tmpdir, exp)
+				output := path.Join(subDir, exp)
 				got, err := os.ReadFile(output)
 				require.NoError(t, err)
 				cup.SnapshotT(t, got)
