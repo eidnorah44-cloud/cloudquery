@@ -313,8 +313,8 @@ func (*Client) canAutoMigrate(changes []schema.TableColumnChange) bool {
 }
 
 func sanitizeColumn(name string) string {
-	// temporary, `identifier()` would be better but it doesn't work for column names
-	return `"` + strings.ToUpper(name) + `"`
+	// Escape double quotes to prevent SQL injection in identifier context
+	return `"` + strings.ReplaceAll(strings.ToUpper(name), `"`, `""`) + `"`
 }
 
 func uniqueConstraintName(tableName, columnName string) string {
