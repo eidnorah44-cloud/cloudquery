@@ -19,8 +19,16 @@ var allowedEnvPrefixes = []string{
 // minRedactingLength is the minimum length of an environment variable value for it to be redacted
 const minRedactingLength = 4
 
+type secretPair struct {
+	val []byte
+	rep []byte
+}
+
 type SecretAwareRedactor struct {
 	secrets map[string]string
+	// pairs caches pre-converted []byte representations of secret values and names
+	// to avoid heap allocations on every RedactBytes call in hot log/output paths.
+	pairs []secretPair
 }
 
 func NewSecretAwareRedactor() *SecretAwareRedactor {
@@ -32,8 +40,8 @@ func (s *SecretAwareRedactor) RedactStr(msg string) string {
 }
 
 func (s *SecretAwareRedactor) RedactBytes(msg []byte) []byte {
-	for v, k := range s.secrets {
-		msg = bytes.ReplaceAll(msg, []byte(v), []byte(k))
+	for _, pair := range s.pairs {
+		msg = bytes.ReplaceAll(msg, pair.val, pair.rep)
 	}
 	return msg
 }
@@ -49,7 +57,13 @@ func (s *SecretAwareRedactor) AddSecretEnv(envs []string) {
 			continue
 		}
 
-		s.secrets[parts[1]] = parts[0]
+		if _, ok := s.secrets[parts[1]]; !ok {
+			s.secrets[parts[1]] = parts[0]
+			s.pairs = append(s.pairs, secretPair{
+				val: []byte(parts[1]),
+				rep: []byte(parts[0]),
+			})
+		}
 	}
 }
 

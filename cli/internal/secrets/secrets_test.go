@@ -86,3 +86,21 @@ func TestRedaction(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkRedactBytes(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	redactor.AddSecretEnv([]string{
+		"DB_PASS=foobar123",
+		"API_KEY=cqtk_test_key_12345",
+		"SECRET_TOKEN=secret_token_val_67890",
+		"AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"AZURE_CLIENT_SECRET=azure_secret_val_abcde",
+	})
+	msg := []byte("2025-01-01 INFO connecting to database with password foobar123 and api key cqtk_test_key_12345 using token secret_token_val_67890")
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactBytes(msg)
+	}
+}
