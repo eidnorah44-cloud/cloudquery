@@ -84,6 +84,53 @@ func TestSanitizeJSONKeys(t *testing.T) {
 	}
 }
 
+func TestSanitizeJSONKey(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"valid_key_123", "valid_key_123"},
+		{"foo-bar", "foo_bar"},
+		{"foo:bar", "foo_bar"},
+		{"foo.bar.baz", "foo_bar_baz"},
+		{"ta.rget*", "ta_rget_"},
+		{"special@char!", "special_char_"},
+	}
+
+	for _, tt := range tests {
+		got := sanitizeJSONKey(tt.input)
+		if got != tt.expected {
+			t.Errorf("sanitizeJSONKey(%q) = %q; want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func BenchmarkSanitizeJSONKeys(b *testing.B) {
+	m := map[string]any{
+		"account_id":  "123456789012",
+		"arn":         "arn:aws:iam::123456789012:user/test",
+		"created_at":  "2023-01-01T00:00:00Z",
+		"tags.env":    "production",
+		"user:name":   "alice",
+		"status-code": 200,
+		"details": map[string]any{
+			"region":     "us-east-1",
+			"ip-address": "192.168.1.1",
+			"config.id":  "cfg-99",
+		},
+	}
+
+	bytes, _ := json.Marshal(m)
+	var data any
+	_ = json.Unmarshal(bytes, &data)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = sanitizeJSONKeysForObject(data)
+	}
+}
+
 func TestReplacePathVariables(t *testing.T) {
 	cases := []struct {
 		inputPath    string
