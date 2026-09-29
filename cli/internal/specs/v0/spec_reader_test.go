@@ -1074,3 +1074,46 @@ func TestSpecReaderWithoutValidation_SourceOnly(t *testing.T) {
 	require.NoError(t, r.SetDestinationsAndValidate([]*Destination{dest}))
 	require.Equal(t, dest, r.GetDestinationByName("platform"))
 }
+
+func TestGetDestinationNamesForSource(t *testing.T) {
+	r := &SpecReader{
+		sourcesMap: map[string]*Source{
+			"aws": {
+				Metadata:     Metadata{Name: "aws"},
+				Destinations: []string{"postgres", "snowflake", "nonexistent"},
+			},
+		},
+		destinationsMap: map[string]*Destination{
+			"postgres":  {Metadata: Metadata{Name: "postgres"}},
+			"snowflake": {Metadata: Metadata{Name: "snowflake"}},
+		},
+	}
+
+	destNames := r.GetDestinationNamesForSource("aws")
+	require.Equal(t, []string{"postgres", "snowflake"}, destNames)
+
+	require.Nil(t, r.GetDestinationNamesForSource("nonexistent_source"))
+}
+
+func BenchmarkGetDestinationNamesForSource(b *testing.B) {
+	r := &SpecReader{
+		sourcesMap: map[string]*Source{
+			"aws": {
+				Metadata:     Metadata{Name: "aws"},
+				Destinations: []string{"dest1", "dest2", "dest3", "dest4", "dest5"},
+			},
+		},
+		destinationsMap: map[string]*Destination{
+			"dest1": {Metadata: Metadata{Name: "dest1"}},
+			"dest2": {Metadata: Metadata{Name: "dest2"}},
+			"dest3": {Metadata: Metadata{Name: "dest3"}},
+			"dest4": {Metadata: Metadata{Name: "dest4"}},
+			"dest5": {Metadata: Metadata{Name: "dest5"}},
+		},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = r.GetDestinationNamesForSource("aws")
+	}
+}
