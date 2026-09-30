@@ -23,6 +23,17 @@ func (s *ConcurrentMap[T, U]) Add(key T, value U) {
 	s.m[key] = value
 }
 
+// SetIfGreater updates the value for key under a single write lock if the key is not present
+// or if isGreater returns true for (newValue, existingValue).
+func (s *ConcurrentMap[T, U]) SetIfGreater(key T, value U, isGreater func(newVal, existingVal U) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.m[key]
+	if !ok || isGreater(value, v) {
+		s.m[key] = value
+	}
+}
+
 func (s *ConcurrentMap[T, U]) Get(key T) (U, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
