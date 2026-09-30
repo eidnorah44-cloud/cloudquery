@@ -17,14 +17,11 @@ func NewTableDurations() *TableDurations {
 }
 
 func (td *TableDurations) Set(table string, duration time.Duration) {
-	d, ok := td.data.Get(table)
-	if !ok || duration > d {
-		// if not ok, add the duration
-		// if duration is greater than existing, update it
-		// else do nothing (keep the existing duration)
-
-		td.data.Add(table, duration)
-	}
+	// Use SetIfGreater to perform the lookup, comparison, and update atomically under a single write lock.
+	// This avoids acquiring an RLock followed by a write Lock and redundant map hashing.
+	td.data.SetIfGreater(table, duration, func(newVal, existingVal time.Duration) bool {
+		return newVal > existingVal
+	})
 }
 
 func (td *TableDurations) GetAll() map[string]time.Duration {
