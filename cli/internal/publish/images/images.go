@@ -265,32 +265,50 @@ func uploadImage(ctx context.Context, item cloudquery_api.TeamImage, file string
 	return nil
 }
 
+// ensureValidFilename resolves the local file path for a markdown image reference and
+// prevents path traversal vulnerabilities by validating that the resolved path is within absDir.
 func ensureValidFilename(filename, absDir string) (string, error) {
 	u, err := url.Parse(filename)
 	if err != nil {
-		return "", nil // skip
+		return "", nil // skip invalid URLs
 	}
 
+	var targetPath string
 	if u.Scheme == "" {
-		// it's a local file
 		if filepath.IsAbs(filename) {
-			return filename, nil
+			targetPath = filename
+		} else {
+			targetPath = filepath.Join(absDir, filename)
 		}
-
-		return filepath.Join(absDir, filename), nil
-	} else if u.Scheme != "file" {
-		return "", nil // skip
+	} else if u.Scheme == "file" {
+		if u.Host != "" && u.Host != "localhost" {
+			return "", fmt.Errorf("invalid file URL %s", filename)
+		}
+		p := u.Path
+		if strings.HasPrefix(p, "/") && os.PathSeparator == '\\' {
+			p = strings.TrimPrefix(p, "/")
+		}
+		targetPath = filepath.FromSlash(p)
+	} else {
+		return "", nil // skip non-file schemes (http, https, etc.)
 	}
 
-	if u.Host != "" && u.Host != "localhost" {
-		return "", fmt.Errorf("invalid file URL %s", filename)
+	cleanBaseDir, err := filepath.Abs(absDir)
+	if err != nil {
+		cleanBaseDir = filepath.Clean(absDir)
 	}
-	p := u.Path
-	if strings.HasPrefix(p, "/") && os.PathSeparator == '\\' {
-		p = strings.TrimPrefix(p, "/")
+	resolvedPath, err := filepath.Abs(targetPath)
+	if err != nil {
+		resolvedPath = filepath.Clean(targetPath)
 	}
-	filename = filepath.FromSlash(p)
-	return filename, nil
+
+	// Security: prevent path traversal outside document directory
+	rel, err := filepath.Rel(cleanBaseDir, resolvedPath)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
+		return "", fmt.Errorf("security: path %q traverses outside directory %q", filename, absDir)
+	}
+
+	return resolvedPath, nil
 }
 
 func sha1sum(filename string) (string, error) {
