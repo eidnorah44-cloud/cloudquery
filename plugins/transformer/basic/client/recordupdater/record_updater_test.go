@@ -3,6 +3,7 @@ package recordupdater
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1006,4 +1007,42 @@ func TestObfuscateColumns_IncludeSHAFalse(t *testing.T) {
 
 	require.Equal(t, redactedByCQMessageNoSHA, updatedRecord.Column(0).(*array.String).Value(0))
 	require.Equal(t, redactedByCQMessageNoSHA, updatedRecord.Column(0).(*array.String).Value(1))
+}
+
+func BenchmarkDropRows(b *testing.B) {
+	numRows := 10000
+	numCols := 20
+
+	fields := make([]arrow.Field, numCols)
+	for c := 0; c < numCols; c++ {
+		fields[c] = arrow.Field{Name: "col_" + strconv.Itoa(c), Type: arrow.BinaryTypes.String}
+	}
+	sc := arrow.NewSchema(fields, nil)
+
+	pool := memory.NewGoAllocator()
+	cols := make([]arrow.Array, numCols)
+	for c := 0; c < numCols; c++ {
+		bld := array.NewStringBuilder(pool)
+		for r := 0; r < numRows; r++ {
+			if r%10 == 0 && c == 0 {
+				bld.Append("drop_me")
+			} else {
+				bld.Append("keep_me_" + strconv.Itoa(r))
+			}
+		}
+		cols[c] = bld.NewArray()
+	}
+
+	record := array.NewRecordBatch(sc, cols, int64(numRows))
+	dropVal := "drop_me"
+	targetCols := []string{"col_0"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		updater := New(record)
+		_, err := updater.DropRows(targetCols, &dropVal)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
