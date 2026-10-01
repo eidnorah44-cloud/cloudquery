@@ -244,6 +244,14 @@ text
 			expect:      nil,
 			expectError: `error processing image "path.to/img2/image.png": open`,
 		},
+		{
+			name: "path traversal attempt",
+			contents: `# Title
+![](../secret.png)
+`,
+			expect:      nil,
+			expectError: `security: path "../secret.png" traverses outside directory`,
+		},
 	}
 
 	tempdir := t.TempDir()
