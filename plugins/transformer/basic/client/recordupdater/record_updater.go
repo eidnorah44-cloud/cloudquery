@@ -29,6 +29,11 @@ type RecordUpdater struct {
 	schemaUpdater *schemaupdater.SchemaUpdater
 }
 
+type rowInterval struct {
+	start int64
+	end   int64
+}
+
 func New(record arrow.RecordBatch) *RecordUpdater {
 	return &RecordUpdater{
 		record:        record,
@@ -179,71 +184,103 @@ func (r *RecordUpdater) ObfuscateSensitiveColumns(includeSHA bool) (arrow.Record
 	return r.ObfuscateColumns(sensitiveColumnsArr, includeSHA)
 }
 
+// DropRows filters out rows where specified columns equal value (or are null if value is nil).
+// Optimized to avoid map allocations, redundant slices.Contains scans, and batch slice allocations.
 func (r *RecordUpdater) DropRows(columnNames []string, value *string) (arrow.RecordBatch, error) {
 	cols := r.record.Columns()
+	numRows := r.record.NumRows()
+	if numRows == 0 {
+		return r.record, nil
+	}
 
-	rowsToDrop := make(map[int]bool)
+	// Pre-filter target columns into a boolean lookup slice to avoid O(N*C) slices.Contains scans
+	targetCols := make([]bool, len(cols))
+	hasTarget := false
+	for j := range cols {
+		if slices.Contains(columnNames, r.record.ColumnName(j)) {
+			targetCols[j] = true
+			hasTarget = true
+		}
+	}
+	if !hasTarget {
+		return r.record, nil
+	}
+
+	// Use boolean slice for O(1) row drop check without map allocations
+	rowsToDrop := make([]bool, numRows)
+	droppedCount := 0
+
 	for j, column := range cols {
-		if !slices.Contains(columnNames, r.record.ColumnName(j)) {
+		if !targetCols[j] {
 			continue
 		}
-		for i := range column.Len() {
-			// check if i in map already, if so, keep going
+		for i := 0; i < int(numRows); i++ {
 			if rowsToDrop[i] {
 				continue
 			}
 			// If Value specified by the user is nil, and Column is null, we drop the row.
 			// Or if Value specified by the user is not nil, and Column is valid and equal to the Value, we drop the row.
-			if column.IsNull(i) && value == nil || value != nil && column.IsValid(i) && column.ValueStr(i) == *value {
+			if (value == nil && column.IsNull(i)) || (value != nil && column.IsValid(i) && column.ValueStr(i) == *value) {
 				rowsToDrop[i] = true
+				droppedCount++
 			}
 		}
 	}
-	if len(rowsToDrop) == 0 {
+
+	if droppedCount == 0 {
 		return r.record, nil
 	}
-	newRowLen := int(r.record.NumRows()) - len(rowsToDrop)
-	rowSlices := make([]arrow.RecordBatch, 0, newRowLen)
 
-	// This section builds slices of rows that are not to be dropped.
-	currentSliceStart := -1
-	for row := range r.record.NumRows() {
-		if !rowsToDrop[int(row)] {
-			if currentSliceStart == -1 {
-				currentSliceStart = int(row)
+	newRowLen := int64(numRows) - int64(droppedCount)
+
+	// Build intervals of contiguous row indices to keep
+	intervals := make([]rowInterval, 0, 16)
+	currentStart := int64(-1)
+	for row := int64(0); row < numRows; row++ {
+		if !rowsToDrop[row] {
+			if currentStart == -1 {
+				currentStart = row
 			}
-			// This handles the edge case of checking the last row
-			if row == r.record.NumRows()-1 && currentSliceStart != -1 {
-				rowSlices = append(rowSlices, r.record.NewSlice(int64(currentSliceStart), row+1))
+		} else {
+			if currentStart != -1 {
+				intervals = append(intervals, rowInterval{start: currentStart, end: row})
+				currentStart = -1
 			}
-			continue
-		}
-		// if we reach here, it means that the current row is supposed to be dropped, so we create a NewSlice and reset currentSliceStart
-		if currentSliceStart != -1 {
-			rowSlices = append(rowSlices, r.record.NewSlice(int64(currentSliceStart), row))
-			currentSliceStart = -1
 		}
 	}
-	concatenatedCols := make([]arrow.Array, int(r.record.NumCols()))
-	for i := range r.record.NumCols() {
-		var colChunks []arrow.Array
-		for _, slice := range rowSlices {
-			colChunks = append(colChunks, slice.Column(int(i)))
-		}
+	if currentStart != -1 {
+		intervals = append(intervals, rowInterval{start: currentStart, end: numRows})
+	}
 
-		if len(rowSlices) > 0 {
+	concatenatedCols := make([]arrow.Array, r.record.NumCols())
+	for i := 0; i < int(r.record.NumCols()); i++ {
+		col := r.record.Column(i)
+		if len(intervals) == 0 {
+			builder := array.NewBuilder(memory.DefaultAllocator, col.DataType())
+			concatenatedCols[i] = builder.NewArray()
+		} else if len(intervals) == 1 {
+			// Single contiguous range: slice array directly without Concatenate overhead
+			concatenatedCols[i] = array.NewSlice(col, intervals[0].start, intervals[0].end)
+		} else {
+			colChunks := make([]arrow.Array, len(intervals))
+			for k, intv := range intervals {
+				colChunks[k] = array.NewSlice(col, intv.start, intv.end)
+			}
 			concat, err := array.Concatenate(colChunks, memory.DefaultAllocator)
+			for _, chunk := range colChunks {
+				chunk.Release()
+			}
 			if err != nil {
+				for j := 0; j < i; j++ {
+					concatenatedCols[j].Release()
+				}
 				return nil, fmt.Errorf("failed to concatenate arrays: %w", err)
 			}
 			concatenatedCols[i] = concat
-		} else {
-			builder := array.NewBuilder(memory.DefaultAllocator, r.record.Column(int(i)).DataType())
-			concatenatedCols[i] = builder.NewArray()
 		}
 	}
 
-	r.record = array.NewRecordBatch(r.record.Schema(), concatenatedCols, int64(newRowLen))
+	r.record = array.NewRecordBatch(r.record.Schema(), concatenatedCols, newRowLen)
 	return r.record, nil
 }
 
