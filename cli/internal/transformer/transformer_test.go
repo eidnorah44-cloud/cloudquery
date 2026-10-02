@@ -165,3 +165,28 @@ func TestRecord(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkTransformSchema(b *testing.B) {
+	fields := make([]arrow.Field, 50)
+	for i := 0; i < 50; i++ {
+		var md arrow.Metadata
+		if i == 0 {
+			md = arrow.MetadataFrom(map[string]string{
+				schema.MetadataPrimaryKey: "true",
+				schema.MetadataUnique:     "true",
+			})
+		}
+		fields[i] = arrow.Field{
+			Name:     "col_" + string(rune('a'+i%26)),
+			Type:     arrow.PrimitiveTypes.Int64,
+			Metadata: md,
+		}
+	}
+	sc := arrow.NewSchema(fields, nil)
+	t := NewRecordTransformer(WithRemovePKs(), WithRemoveUniqueConstraints(), WithCQIDPrimaryKey())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = t.TransformSchema(sc)
+	}
+}
