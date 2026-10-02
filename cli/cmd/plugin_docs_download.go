@@ -56,6 +56,22 @@ func newCmdPluginDocsDownload() *cobra.Command {
 	return cmd
 }
 
+func sanitizeDocFileName(docsDir, itemName string) (string, string, error) {
+	// Prevent path traversal by replacing both forward and backward slashes across all platforms
+	safeName := strings.ReplaceAll(itemName, "/", "_")
+	safeName = strings.ReplaceAll(safeName, "\\", "_") + ".md"
+
+	fn := filepath.Join(docsDir, safeName)
+
+	// Verify target path remains strictly inside docsDir as defense-in-depth
+	rel, err := filepath.Rel(docsDir, fn)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("invalid doc file path: %s", itemName)
+	}
+
+	return safeName, fn, nil
+}
+
 func runPluginDocsDownload(ctx context.Context, cmd *cobra.Command, args []string) error {
 	tc := auth.NewTokenClient()
 	token, err := tc.GetToken()
@@ -103,9 +119,12 @@ func runPluginDocsDownload(ctx context.Context, cmd *cobra.Command, args []strin
 		return errors.New("failed to read docs: nil response")
 	}
 	for _, item := range resp.JSON200.Items {
-		safeName := strings.ReplaceAll(item.Name, string(filepath.Separator), "_") + ".md"
+		safeName, fn, err := sanitizeDocFileName(docsDir, item.Name)
+		if err != nil {
+			return err
+		}
+
 		fmt.Print("  ", safeName, " ")
-		fn := filepath.Join(docsDir, safeName)
 		fp, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
 		if err != nil {
 			return err
