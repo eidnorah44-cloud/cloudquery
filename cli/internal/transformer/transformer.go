@@ -89,15 +89,18 @@ func NewRecordTransformer(opts ...RecordTransformerOption) *RecordTransformer {
 }
 
 func (t *RecordTransformer) TransformSchema(sc *arrow.Schema) *arrow.Schema {
-	fields := make([]arrow.Field, 0, len(sc.Fields())+t.internalColumns)
+	scFields := sc.Fields()
+	// Preallocate single output slice with exact capacity to avoid intermediate slice allocations
+	transformedFields := make([]arrow.Field, 0, len(scFields)+t.internalColumns)
+
 	if t.withSyncTime && !sc.HasField(cqSyncTime) {
-		fields = append(fields, arrow.Field{Name: cqSyncTime, Type: arrow.FixedWidthTypes.Timestamp_us, Nullable: !t.cqColumnsNotNull})
+		transformedFields = append(transformedFields, arrow.Field{Name: cqSyncTime, Type: arrow.FixedWidthTypes.Timestamp_us, Nullable: !t.cqColumnsNotNull})
 	}
 	if t.withSourceName && !sc.HasField(cqSourceName) {
-		fields = append(fields, arrow.Field{Name: cqSourceName, Type: arrow.BinaryTypes.String, Nullable: !t.cqColumnsNotNull})
+		transformedFields = append(transformedFields, arrow.Field{Name: cqSourceName, Type: arrow.BinaryTypes.String, Nullable: !t.cqColumnsNotNull})
 	}
 	if t.withSyncGroupID && !sc.HasField(cqSyncGroupId) {
-		fields = append(fields, arrow.Field{
+		transformedFields = append(transformedFields, arrow.Field{
 			Name: cqSyncGroupId,
 			Type: arrow.BinaryTypes.String,
 			Metadata: arrow.NewMetadata(
@@ -105,29 +108,40 @@ func (t *RecordTransformer) TransformSchema(sc *arrow.Schema) *arrow.Schema {
 				[]string{schema.MetadataTrue},
 			)})
 	}
-	fields = append(fields, sc.Fields()...)
 
-	transformedFields := make([]arrow.Field, len(fields))
-	for i, field := range fields {
+	for _, field := range scFields {
+		hasUnique := field.Metadata.FindKey(schema.MetadataUnique) >= 0
+		hasPK := field.Metadata.FindKey(schema.MetadataPrimaryKey) >= 0
+		isCQID := field.Name == cqIDColumnName && t.cqIDPrimaryKey
+
+		needRemoveUnique := hasUnique && t.removeUniqueConstraints
+		needRemovePK := hasPK && t.removePks
+
+		// Performance optimization: skip map allocations and cloning if field metadata doesn't need modifications
+		if !needRemoveUnique && !needRemovePK && !isCQID {
+			transformedFields = append(transformedFields, field)
+			continue
+		}
+
 		mdMap := field.Metadata.ToMap()
-		if _, ok := mdMap[schema.MetadataUnique]; ok && t.removeUniqueConstraints {
+		if needRemoveUnique {
 			delete(mdMap, schema.MetadataUnique)
 		}
-
-		if _, ok := mdMap[schema.MetadataPrimaryKey]; ok && t.removePks {
+		if needRemovePK {
 			delete(mdMap, schema.MetadataPrimaryKey)
 		}
-		if field.Name == cqIDColumnName && t.cqIDPrimaryKey {
+		if isCQID {
 			mdMap[schema.MetadataPrimaryKey] = schema.MetadataTrue
 		}
 
-		transformedFields[i] = arrow.Field{
+		transformedFields = append(transformedFields, arrow.Field{
 			Name:     field.Name,
 			Type:     field.Type,
 			Nullable: field.Nullable,
 			Metadata: arrow.MetadataFrom(mdMap),
-		}
+		})
 	}
+
 	scMd := sc.Metadata()
 	return arrow.NewSchema(transformedFields, &scMd)
 }
