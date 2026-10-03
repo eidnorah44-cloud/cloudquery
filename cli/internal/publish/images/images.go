@@ -271,26 +271,35 @@ func ensureValidFilename(filename, absDir string) (string, error) {
 		return "", nil // skip
 	}
 
+	var resolvedPath string
 	if u.Scheme == "" {
 		// it's a local file
 		if filepath.IsAbs(filename) {
-			return filename, nil
+			resolvedPath = filepath.Clean(filename)
+		} else {
+			resolvedPath = filepath.Clean(filepath.Join(absDir, filename))
 		}
-
-		return filepath.Join(absDir, filename), nil
-	} else if u.Scheme != "file" {
-		return "", nil // skip
+	} else if u.Scheme == "file" {
+		if u.Host != "" && u.Host != "localhost" {
+			return "", fmt.Errorf("invalid file URL %s", filename)
+		}
+		p := u.Path
+		if strings.HasPrefix(p, "/") && os.PathSeparator == '\\' {
+			p = strings.TrimPrefix(p, "/")
+		}
+		resolvedPath = filepath.Clean(filepath.FromSlash(p))
+	} else {
+		return "", nil // skip non-local schemes (http, https, etc.)
 	}
 
-	if u.Host != "" && u.Host != "localhost" {
-		return "", fmt.Errorf("invalid file URL %s", filename)
+	// Security check: ensure path does not traverse outside the base docDir
+	cleanBase := filepath.Clean(absDir)
+	rel, err := filepath.Rel(cleanBase, resolvedPath)
+	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return "", fmt.Errorf("path traversal attempt detected in image reference: %s", filename)
 	}
-	p := u.Path
-	if strings.HasPrefix(p, "/") && os.PathSeparator == '\\' {
-		p = strings.TrimPrefix(p, "/")
-	}
-	filename = filepath.FromSlash(p)
-	return filename, nil
+
+	return resolvedPath, nil
 }
 
 func sha1sum(filename string) (string, error) {
