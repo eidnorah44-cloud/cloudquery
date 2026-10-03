@@ -163,10 +163,11 @@ func pluginsSorter(prioritySlice []string) func(a, b cqapi.ListPlugin) int {
 	}
 }
 
-func extractYamlFromMarkdownCodeBlock(markdown string) string {
-	re := regexp.MustCompile("```yaml.*?\n([\\s\\S]+?)\n```")
+var reYamlCodeBlock = regexp.MustCompile("```yaml.*?\n([\\s\\S]+?)\n```")
 
-	matches := re.FindStringSubmatch(markdown)
+func extractYamlFromMarkdownCodeBlock(markdown string) string {
+	// reYamlCodeBlock is pre-compiled at package level to avoid recompiling on every call
+	matches := reYamlCodeBlock.FindStringSubmatch(markdown)
 	if len(matches) < 2 {
 		return ""
 	}
