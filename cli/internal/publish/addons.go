@@ -165,15 +165,16 @@ func DownloadAddonFromResponse(res *http.Response, expectedChecksum, zipPath str
 	case "-":
 		fileWriter = os.Stdout
 	default:
-		if st, err := os.Stat(zipPath); err == nil {
-			if st.IsDir() {
-				return fmt.Errorf("file %s already exists: is a directory", zipPath)
-			}
-			return fmt.Errorf("file %s already exists", zipPath)
-		}
-
-		f, err := os.Create(zipPath)
+		// Use O_CREATE|O_EXCL to prevent TOCTOU race conditions and symlink attacks.
+		// Restrict permissions to 0600 so only the owner can read/write the downloaded archive.
+		f, err := os.OpenFile(zipPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
+			if errors.Is(err, os.ErrExist) {
+				if st, statErr := os.Stat(zipPath); statErr == nil && st.IsDir() {
+					return fmt.Errorf("file %s already exists: is a directory", zipPath)
+				}
+				return fmt.Errorf("file %s already exists", zipPath)
+			}
 			return fmt.Errorf("failed to create file: %w", err)
 		}
 		fileWriter = f
