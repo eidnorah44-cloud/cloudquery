@@ -86,3 +86,41 @@ func TestRedaction(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkRedactBytes(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	envs := []string{
+		"DB_PASS=foobar12345",
+		"API_KEY=cqtk_1234567890",
+		"AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"PGPASSWORD=supersecretpass",
+		"TOKEN=ghp_16fdU270mf12345678901234567890123456",
+	}
+	redactor.AddSecretEnv(envs)
+	msg := []byte("2023-10-01T12:00:00Z INFO connecting to database at localhost:5432 with user admin and timeout 30s")
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactBytes(msg)
+	}
+}
+
+func BenchmarkRedactStr(b *testing.B) {
+	redactor := NewSecretAwareRedactor()
+	envs := []string{
+		"DB_PASS=foobar12345",
+		"API_KEY=cqtk_1234567890",
+		"AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"PGPASSWORD=supersecretpass",
+		"TOKEN=ghp_16fdU270mf12345678901234567890123456",
+	}
+	redactor.AddSecretEnv(envs)
+	msg := "2023-10-01T12:00:00Z INFO connecting to database at localhost:5432 with user admin and timeout 30s"
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = redactor.RedactStr(msg)
+	}
+}
