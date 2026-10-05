@@ -169,11 +169,12 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 		return arrow.FixedWidthTypes.Timestamp_us, true
 	}
 
-	matches := reTimestamp.FindAllStringSubmatch(t, -1)
+	// Use FindStringSubmatch instead of FindAllStringSubmatch to avoid unnecessary 2D slice allocations
+	matches := reTimestamp.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
-	switch matches[0][1] {
+	switch matches[1] {
 	case "0":
 		return arrow.FixedWidthTypes.Timestamp_s, true
 	case "1", "2", "3":
@@ -184,11 +185,12 @@ func parseTimestamp(t string) (arrow.DataType, bool) {
 }
 
 func parseTime(t string) (arrow.DataType, bool) {
-	matches := reTime.FindAllStringSubmatch(t, -1)
+	// Use FindStringSubmatch instead of FindAllStringSubmatch to avoid unnecessary 2D slice allocations
+	matches := reTime.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
-	switch matches[0][1] {
+	switch matches[1] {
 	case "0":
 		return arrow.FixedWidthTypes.Time32s, true
 	case "1", "2", "3":
@@ -199,21 +201,22 @@ func parseTime(t string) (arrow.DataType, bool) {
 }
 
 func parseNumeric(t string) (arrow.DataType, bool) {
-	matches := reNumeric.FindAllStringSubmatch(t, -1)
+	// Use FindStringSubmatch instead of FindAllStringSubmatch to avoid unnecessary 2D slice allocations
+	matches := reNumeric.FindStringSubmatch(t)
 	if len(matches) == 0 {
 		return nil, false
 	}
 
-	if len(matches[0]) < 3 || matches[0][1] == "" {
+	if len(matches) < 3 || matches[1] == "" {
 		// no precision/scale specified
 		return &arrow.Decimal128Type{Precision: 38, Scale: 0}, true
 	}
 
-	precision, err := strconv.ParseInt(matches[0][1], 10, 32)
+	precision, err := strconv.ParseInt(matches[1], 10, 32)
 	if precision == 0 || err != nil {
 		panic("precision cannot be 0")
 	}
-	scale, err := strconv.ParseInt(matches[0][2], 10, 32)
+	scale, err := strconv.ParseInt(matches[2], 10, 32)
 	if err != nil {
 		panic("error parsing scale " + err.Error())
 	}
