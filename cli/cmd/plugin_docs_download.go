@@ -103,7 +103,11 @@ func runPluginDocsDownload(ctx context.Context, cmd *cobra.Command, args []strin
 		return errors.New("failed to read docs: nil response")
 	}
 	for _, item := range resp.JSON200.Items {
-		safeName := strings.ReplaceAll(item.Name, string(filepath.Separator), "_") + ".md"
+		// Security: Sanitize item.Name to prevent path traversal attacks.
+		// Replace both Unix ('/') and Windows ('\') path separators, then strip any remaining directory components.
+		cleanName := strings.ReplaceAll(item.Name, "/", "_")
+		cleanName = strings.ReplaceAll(cleanName, "\\", "_")
+		safeName := filepath.Base(cleanName) + ".md"
 		fmt.Print("  ", safeName, " ")
 		fn := filepath.Join(docsDir, safeName)
 		fp, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
