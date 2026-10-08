@@ -43,8 +43,9 @@ var timeRegex = regexp.MustCompile(`\$\{time:([^}]+)\}`)
 func expandFileConfig(cfg []byte) ([]byte, error) {
 	var expandErr error
 	cfg = fileRegex.ReplaceAllFunc(cfg, func(match []byte) []byte {
-		filename := fileRegex.FindSubmatch(match)[1]
-		content, err := os.ReadFile(string(filename))
+		// Slice submatch directly from match (${file:FILENAME}) to avoid calling FindSubmatch
+		filename := string(match[7 : len(match)-1])
+		content, err := os.ReadFile(filename)
 		if err != nil {
 			expandErr = err
 			return nil
@@ -64,8 +65,9 @@ func expandFileConfig(cfg []byte) ([]byte, error) {
 func expandEnv(cfg []byte) ([]byte, error) {
 	var expandErr error
 	cfg = envRegex.ReplaceAllFunc(cfg, func(match []byte) []byte {
-		envVar := envRegex.FindSubmatch(match)[1]
-		content, ok := os.LookupEnv(string(envVar))
+		// Slice submatch directly from match (${ENV_VAR}) to avoid calling FindSubmatch
+		envVar := string(match[2 : len(match)-1])
+		content, ok := os.LookupEnv(envVar)
 		if !ok {
 			expandErr = fmt.Errorf("env variable %s not found", envVar)
 			return nil
@@ -79,12 +81,17 @@ func expandEnv(cfg []byte) ([]byte, error) {
 func expandTime(cfg []byte) ([]byte, error) {
 	var expandErr error
 	cfg = timeRegex.ReplaceAllFunc(cfg, func(match []byte) []byte {
-		relativeTime := timeRegex.FindSubmatch(match)[1]
-		splitString := strings.Split(string(relativeTime), "|")
-		relativeTimeString := splitString[0]
+		// Slice submatch directly from match (${time:RELATIVE_TIME}) to avoid calling FindSubmatch
+		relativeTime := match[7 : len(match)-1]
+		// Avoid strings.Split allocation by locating the '|' separator directly
+		idx := bytes.IndexByte(relativeTime, '|')
+		var relativeTimeString string
 		timeFormat := time.RFC3339
-		if len(splitString) > 1 {
-			timeFormat = splitString[1]
+		if idx != -1 {
+			relativeTimeString = string(relativeTime[:idx])
+			timeFormat = string(relativeTime[idx+1:])
+		} else {
+			relativeTimeString = string(relativeTime)
 		}
 		parsedTime, err := configtype.ParseTime(relativeTimeString)
 		if err != nil {
@@ -399,7 +406,8 @@ func stripYamlComments(b []byte) ([]byte, error) {
 	r := rand.New(rand.NewSource(1))
 	placeholders := map[string]string{}
 	b = envRegex.ReplaceAllFunc(b, func(match []byte) []byte {
-		content := envRegex.FindSubmatch(match)[1]
+		// Slice submatch directly from match (${ENV_VAR}) to avoid calling FindSubmatch
+		content := match[2 : len(match)-1]
 		k := strconv.Itoa(r.Int())
 		for bytes.Contains(content, []byte(k)) {
 			k = strconv.Itoa(r.Int())
