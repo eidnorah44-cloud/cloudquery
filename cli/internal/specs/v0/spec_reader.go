@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -280,12 +279,18 @@ func (r *SpecReader) GetTransformerWarningsByName(name string) Warnings {
 	return r.transformerWarningsMap[name]
 }
 
+// GetDestinationNamesForSource returns the list of destination names for the given source name.
+// Optimization: Pre-allocates destination slice capacity to avoid re-allocations and avoids redundant
+// O(N) slices.Contains check inside loop which produced O(N^2) complexity. Also includes nil checks for safety.
 func (r *SpecReader) GetDestinationNamesForSource(name string) []string {
-	var destinations []string
 	source := r.sourcesMap[name]
+	if source == nil {
+		return nil
+	}
+	destinations := make([]string, 0, len(source.Destinations))
 	for _, destinationName := range source.Destinations {
-		if slices.Contains(source.Destinations, destinationName) {
-			destinations = append(destinations, r.destinationsMap[destinationName].Name)
+		if dest, ok := r.destinationsMap[destinationName]; ok && dest != nil {
+			destinations = append(destinations, dest.Name)
 		}
 	}
 	return destinations
