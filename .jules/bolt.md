@@ -1,0 +1,3 @@
+## 2026-10-10 - Fast-path prefix checks before regex in type conversion
+**Learning:** In Go, regex operations like `FindAllStringSubmatch` allocate slices and run regex NFA evaluation. When type conversion functions run specialized regex parsers on every input before exact match switches, non-matching types incur heavy regex overhead. Adding `strings.HasPrefix` guards and replacing `FindAllStringSubmatch` with `FindStringSubmatch` avoids regex execution and slice allocations for all non-matching types.
+**Action:** Always check prefix or substring using string methods before running unanchored regexes in hot conversion loops.
