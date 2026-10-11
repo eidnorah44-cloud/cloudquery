@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	gosync "sync"
 	"syscall"
@@ -220,7 +222,9 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 		for response.FunctionCall != nil {
 			switch *response.FunctionCall {
 			case "create_spec_file":
-				err := createSpecFile(response.FunctionCallArguments["filename_without_extension"].(string), response.FunctionCallArguments["content"].(string))
+				filename := getFunctionArgString(response.FunctionCallArguments, "filename_without_extension")
+				content := getFunctionArgString(response.FunctionCallArguments, "content")
+				err := createSpecFile(filename, content)
 				if err != nil {
 					return fmt.Errorf("failed to create spec file: %w", err)
 				}
@@ -242,7 +246,9 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 					return fmt.Errorf("failed to chat: %w", err)
 				}
 			case "create_sql_file":
-				err := createSQLFile(response.FunctionCallArguments["filename_without_extension"].(string), response.FunctionCallArguments["content"].(string))
+				filename := getFunctionArgString(response.FunctionCallArguments, "filename_without_extension")
+				content := getFunctionArgString(response.FunctionCallArguments, "content")
+				err := createSQLFile(filename, content)
 				if err != nil {
 					return fmt.Errorf("failed to create SQL file: %w", err)
 				}
@@ -267,7 +273,8 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 				// Show spinner while running the test
 				stop := startSpinner(ctx, testMessages)
 
-				testOutput := cloudqueryTest(response.FunctionCallArguments["filename_without_extension"].(string))
+				filename := getFunctionArgString(response.FunctionCallArguments, "filename_without_extension")
+				testOutput := cloudqueryTest(filename)
 				stop() // Stop the spinner
 
 				// Show spinner while waiting for API response after running test
@@ -297,16 +304,43 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 	return nil
 }
 
+func getFunctionArgString(args map[string]any, key string) string {
+	if args == nil {
+		return ""
+	}
+	if val, ok := args[key]; ok {
+		if s, ok := val.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func createSpecFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".yaml", []byte(content), 0644)
+	// Security Concern: Sanitize filename to prevent Path Traversal vulnerabilities (CWE-22)
+	base := filepath.Base(filenameWithoutExtension)
+	if base == "." || base == "/" || base == ".." || base == "" {
+		return errors.New("invalid filename for spec file")
+	}
+	return os.WriteFile(base+".yaml", []byte(content), 0644)
 }
 
 func createSQLFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".sql", []byte(content), 0644)
+	// Security Concern: Sanitize filename to prevent Path Traversal vulnerabilities (CWE-22)
+	base := filepath.Base(filenameWithoutExtension)
+	if base == "." || base == "/" || base == ".." || base == "" {
+		return errors.New("invalid filename for SQL file")
+	}
+	return os.WriteFile(base+".sql", []byte(content), 0644)
 }
 
 func cloudqueryTest(filenameWithoutExtension string) string {
-	cmd := exec.Command("cloudquery", "test", filenameWithoutExtension+".yaml")
+	// Security Concern: Sanitize filename to prevent Path Traversal vulnerabilities (CWE-22)
+	base := filepath.Base(filenameWithoutExtension)
+	if base == "." || base == "/" || base == ".." || base == "" {
+		return "cloudquery test failed: invalid filename"
+	}
+	cmd := exec.Command("cloudquery", "test", base+".yaml")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
