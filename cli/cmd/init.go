@@ -68,6 +68,9 @@ var (
 	successful        = color.New(color.Bold, color.FgGreen)
 	link              = color.New(color.Bold, color.FgCyan)
 	errorColor        = color.New(color.Bold, color.FgRed)
+
+	// reYamlCodeBlock pre-compiles regex for extracting YAML block from markdown, avoiding costly recompilation on each call.
+	reYamlCodeBlock = regexp.MustCompile("```yaml.*?\n([\\s\\S]+?)\n```")
 )
 
 func newCmdInit() *cobra.Command {
@@ -164,9 +167,8 @@ func pluginsSorter(prioritySlice []string) func(a, b cqapi.ListPlugin) int {
 }
 
 func extractYamlFromMarkdownCodeBlock(markdown string) string {
-	re := regexp.MustCompile("```yaml.*?\n([\\s\\S]+?)\n```")
-
-	matches := re.FindStringSubmatch(markdown)
+	// Use pre-compiled regex reYamlCodeBlock to avoid recompiling regexp on every function invocation
+	matches := reYamlCodeBlock.FindStringSubmatch(markdown)
 	if len(matches) < 2 {
 		return ""
 	}
