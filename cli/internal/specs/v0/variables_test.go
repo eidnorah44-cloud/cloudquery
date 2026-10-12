@@ -82,3 +82,20 @@ func TestReplaceVariables(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkReplaceVariables(b *testing.B) {
+	vars := Variables{
+		Plugins: map[string]PluginVariables{
+			"aws": {
+				Connection: "localhost:7777",
+			},
+		},
+	}
+	src := "inside @@plugins.aws.connection string multiple times @@plugins.aws.connection"
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = ReplaceVariables(src, vars, true)
+	}
+}
