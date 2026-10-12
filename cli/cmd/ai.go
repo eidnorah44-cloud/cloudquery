@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"os/signal"
 	"strings"
 	gosync "sync"
@@ -297,20 +298,42 @@ func aiCmdInner(ctx context.Context, client *cloudquery_api.ClientWithResponses,
 	return nil
 }
 
+// sanitizeFilename extracts the base name from filenameWithoutExtension to prevent
+// path traversal attacks (e.g., ../ or absolute paths) when creating files or executing commands.
+func sanitizeFilename(filenameWithoutExtension string) (string, error) {
+	clean := filepath.Base(filenameWithoutExtension)
+	if clean == "." || clean == ".." || clean == "/" || clean == "\\" {
+		return "", fmt.Errorf("invalid filename: %q", filenameWithoutExtension)
+	}
+	return clean, nil
+}
+
 func createSpecFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".yaml", []byte(content), 0644)
+	filename, err := sanitizeFilename(filenameWithoutExtension)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename+".yaml", []byte(content), 0644)
 }
 
 func createSQLFile(filenameWithoutExtension, content string) error {
-	return os.WriteFile(filenameWithoutExtension+".sql", []byte(content), 0644)
+	filename, err := sanitizeFilename(filenameWithoutExtension)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename+".sql", []byte(content), 0644)
 }
 
 func cloudqueryTest(filenameWithoutExtension string) string {
-	cmd := exec.Command("cloudquery", "test", filenameWithoutExtension+".yaml")
+	filename, err := sanitizeFilename(filenameWithoutExtension)
+	if err != nil {
+		return fmt.Sprintf("cloudquery test failed: %v", err)
+	}
+	cmd := exec.Command("cloudquery", "test", filename+".yaml")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return fmt.Sprintf("cloudquery test failed: %v\nOutput:\n%s", err, out.String())
 	}
