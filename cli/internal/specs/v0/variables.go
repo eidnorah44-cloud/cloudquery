@@ -3,10 +3,9 @@ package specs
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
-
-	"github.com/thoas/go-funk"
 )
 
 type PluginVariables struct {
@@ -22,20 +21,15 @@ var reVariables = regexp.MustCompile(`@@(plugins\.[a-zA-Z0-9_\.-]+)`)
 // ReplaceVariables replaces variables starting with @@ in the src string
 // with the values from the values from variables by dot notation.
 // Example: @@plugins.aws.connection will be replaced with the value of variables.Plugins["aws"].Connection
+// Optimization: Direct reflection traversal (getVariableValue) instead of expensive
+// json.Marshal, json.Unmarshal, and third-party reflection library (funk.Get).
 func ReplaceVariables(src string, variables Variables, shouldReplaceLocalhost bool) (string, error) {
 	var lastErr error
-	bytes, err := json.Marshal(variables)
-	if err != nil {
-		return "", err
-	}
-	variablesMap := make(map[string]any)
-	err = json.Unmarshal(bytes, &variablesMap)
-	if err != nil {
-		return "", err
-	}
+	varsValue := reflect.ValueOf(variables)
 	result := reVariables.ReplaceAllStringFunc(src, func(s string) string {
 		variablePath := s[2:]
-		res := funk.Get(variablesMap, variablePath)
+		parts := strings.Split(variablePath, ".")
+		res := getVariableValue(varsValue, parts)
 		if res == nil {
 			lastErr = fmt.Errorf("variable %s not found", variablePath)
 			return s
@@ -62,4 +56,48 @@ func ReplaceVariables(src string, variables Variables, shouldReplaceLocalhost bo
 		return resString
 	})
 	return result, lastErr
+}
+
+func getVariableValue(val reflect.Value, parts []string) any {
+	if len(parts) == 0 {
+		if !val.IsValid() {
+			return nil
+		}
+		return val.Interface()
+	}
+
+	if !val.IsValid() {
+		return nil
+	}
+
+	if val.Kind() == reflect.Pointer || val.Kind() == reflect.Interface {
+		if val.IsNil() {
+			return nil
+		}
+		val = val.Elem()
+	}
+
+	key := parts[0]
+	switch val.Kind() {
+	case reflect.Map:
+		for _, mapKey := range val.MapKeys() {
+			if mapKey.String() == key {
+				return getVariableValue(val.MapIndex(mapKey), parts[1:])
+			}
+		}
+		return nil
+	case reflect.Struct:
+		t := val.Type()
+		for i := 0; i < val.NumField(); i++ {
+			f := t.Field(i)
+			tag := f.Tag.Get("json")
+			tagName := strings.Split(tag, ",")[0]
+			if tagName == key || strings.EqualFold(f.Name, key) {
+				return getVariableValue(val.Field(i), parts[1:])
+			}
+		}
+		return nil
+	default:
+		return nil
+	}
 }
