@@ -165,3 +165,62 @@ func TestRecord(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkTransformSchema(b *testing.B) {
+	fields := make([]arrow.Field, 50)
+	for i := 0; i < 50; i++ {
+		fields[i] = arrow.Field{
+			Name:     "col_" + string(rune('a'+i%26)),
+			Type:     arrow.PrimitiveTypes.Int64,
+			Nullable: true,
+			Metadata: arrow.NewMetadata([]string{schema.MetadataPrimaryKey}, []string{schema.MetadataTrue}),
+		}
+	}
+	sc := arrow.NewSchema(fields, nil)
+	t := NewRecordTransformer(
+		WithSourceNameColumn("test_source"),
+		WithSyncTimeColumn(time.Now()),
+		WithRemovePKs(),
+		WithRemoveUniqueConstraints(),
+		WithCQIDPrimaryKey(),
+	)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = t.TransformSchema(sc)
+	}
+}
+
+func BenchmarkTransformSchemaTypical(b *testing.B) {
+	fields := make([]arrow.Field, 50)
+	for i := 0; i < 50; i++ {
+		if i%10 == 0 {
+			fields[i] = arrow.Field{
+				Name:     "col_" + string(rune('a'+i%26)),
+				Type:     arrow.PrimitiveTypes.Int64,
+				Nullable: true,
+				Metadata: arrow.NewMetadata([]string{schema.MetadataPrimaryKey}, []string{schema.MetadataTrue}),
+			}
+		} else {
+			fields[i] = arrow.Field{
+				Name:     "col_" + string(rune('a'+i%26)),
+				Type:     arrow.PrimitiveTypes.Int64,
+				Nullable: true,
+			}
+		}
+	}
+	sc := arrow.NewSchema(fields, nil)
+	t := NewRecordTransformer(
+		WithSourceNameColumn("test_source"),
+		WithSyncTimeColumn(time.Now()),
+		WithRemovePKs(),
+		WithRemoveUniqueConstraints(),
+	)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = t.TransformSchema(sc)
+	}
+}
