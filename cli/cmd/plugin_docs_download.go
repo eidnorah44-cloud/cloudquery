@@ -56,6 +56,13 @@ func newCmdPluginDocsDownload() *cobra.Command {
 	return cmd
 }
 
+func sanitizeDocName(name string) string {
+	// Security: Sanitize filename to prevent path traversal. Replace both forward and backward slashes
+	// and use filepath.Base to ensure the target file path remains strictly within docsDir.
+	cleanName := strings.ReplaceAll(strings.ReplaceAll(name, "/", "_"), "\\", "_")
+	return filepath.Base(cleanName) + ".md"
+}
+
 func runPluginDocsDownload(ctx context.Context, cmd *cobra.Command, args []string) error {
 	tc := auth.NewTokenClient()
 	token, err := tc.GetToken()
@@ -103,7 +110,7 @@ func runPluginDocsDownload(ctx context.Context, cmd *cobra.Command, args []strin
 		return errors.New("failed to read docs: nil response")
 	}
 	for _, item := range resp.JSON200.Items {
-		safeName := strings.ReplaceAll(item.Name, string(filepath.Separator), "_") + ".md"
+		safeName := sanitizeDocName(item.Name)
 		fmt.Print("  ", safeName, " ")
 		fn := filepath.Join(docsDir, safeName)
 		fp, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
