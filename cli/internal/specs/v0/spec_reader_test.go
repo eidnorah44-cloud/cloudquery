@@ -843,6 +843,17 @@ func TestLoadSpecs(t *testing.T) {
 	}
 }
 
+func TestGetDestinationNamesForSource(t *testing.T) {
+	specReader, err := NewSpecReader([]string{getPath("gcp.yml")})
+	require.NoError(t, err)
+
+	destNames := specReader.GetDestinationNamesForSource("gcp")
+	require.Equal(t, []string{"postgresqlv2"}, destNames)
+
+	destNamesNil := specReader.GetDestinationNamesForSource("nonexistent")
+	require.Nil(t, destNamesNil)
+}
+
 func TestLoadSpecWithAccountNumbers(t *testing.T) {
 	t.Setenv("ACCOUNT_ID", "0123456789")
 	specReader, err := NewSpecReader([]string{getPath("numbers.yml")})

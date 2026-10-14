@@ -37,6 +37,42 @@ func TestSanitizeJSONRawMessage(t *testing.T) {
 	}
 }
 
+func TestSanitizeKey(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"valid_key_123", "valid_key_123"},
+		{"a-b.c:d", "a_b_c_d"},
+		{"special@key#name$", "special_key_name_"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		got := sanitizeKey(tc.input)
+		require.Equal(t, tc.expected, got)
+	}
+}
+
+func BenchmarkSanitizeKey(b *testing.B) {
+	b.Run("ValidKey", func(b *testing.B) {
+		k := "valid_json_key_name_12345"
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = sanitizeKey(k)
+		}
+	})
+
+	b.Run("InvalidKey", func(b *testing.B) {
+		k := "invalid-json-key.name:12345"
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = sanitizeKey(k)
+		}
+	})
+}
+
 func TestSanitizeJSONKeys(t *testing.T) {
 	m := map[string]any{
 		"foo": "bar",
