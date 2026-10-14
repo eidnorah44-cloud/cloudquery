@@ -129,7 +129,14 @@ func (c *Client) getAuthInfo(ctx context.Context, baseURL string) (gremlingo.Aut
 			if err := signer.SignHTTP(ctx, cr, req, emptyStringSHA256, "neptune-db", c.spec.AWSRegion, time.Now()); err != nil {
 				panic(err) // not ideal, but it's always nil
 			}
-			c.logger.Trace().Any("iam_headers", req.Header).Str("aws_region", c.spec.AWSRegion).Msg("IAM headers")
+			// Security: Redact sensitive authorization headers before logging to prevent credential leakage in trace logs.
+			loggedHeaders := req.Header.Clone()
+			for k := range loggedHeaders {
+				if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "X-Amz-Security-Token") {
+					loggedHeaders.Set(k, "*****")
+				}
+			}
+			c.logger.Trace().Any("iam_headers", loggedHeaders).Str("aws_region", c.spec.AWSRegion).Msg("IAM headers")
 			return gremlingo.HeaderAuthInfo(req.Header)
 		}
 		return gremlingo.NewDynamicAuth(gen), nil
